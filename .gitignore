@@ -1,0 +1,5 @@
+# runtime files written by the server / launcher
+.classcast.pid
+.classcast.port
+classcast.log
+.DS_Store
