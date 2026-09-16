@@ -493,31 +493,100 @@ if(!['localhost','127.0.0.1'].includes(location.hostname))showErr('Open this pag
 setOnAir();fetch('/api/reset?id=host').then(()=>{sig.send('*',{type:'host-ready',hid:HID});sig.run();});
 </script></body></html>"""
 
+LISTEN_CSS = r"""
+:root{--paper:#f7f6f2;--ink:#3b2d6e;--ink2:#8e7fc4;--ink3:#c9c1e3;--grid:rgba(59,45,110,.13);--live:#2f9e6d;--warn:#b9791d;--off:#c0392b}
+*{box-sizing:border-box}html{color-scheme:light}
+body{margin:0;background:var(--paper);color:var(--ink);font:15px/1.45 -apple-system,BlinkMacSystemFont,"SF Pro Text",Inter,Segoe UI,Roboto,sans-serif;min-height:100vh;-webkit-font-smoothing:antialiased;position:relative;overflow-x:hidden}
+.mono{font-family:ui-monospace,"SF Mono",Menlo,Consolas,monospace}
+svg.bg{position:fixed;inset:0;width:100%;height:100%;z-index:0;pointer-events:none;opacity:.55}
+.rx{position:relative;z-index:1;max-width:680px;margin:0 auto;padding:26px 18px 48px}
+.rxhead{display:flex;align-items:flex-end;justify-content:space-between;gap:12px;padding:0 4px 14px}
+.title{display:flex;align-items:baseline;gap:12px}
+.title .name{font-weight:800;letter-spacing:.14em;font-size:20px;text-transform:uppercase}
+.title .sub{font-size:11px;letter-spacing:.16em;color:var(--ink2);text-transform:uppercase}
+.readout{font-size:12px;letter-spacing:.06em;color:var(--ink2);text-transform:uppercase;white-space:nowrap}
+/* the instrument */
+.scope{border:1.5px solid var(--ink);border-radius:18px;padding:12px;background:#fbfaf8;box-shadow:6px 6px 0 -1px var(--paper),6px 6px 0 0 var(--ink3)}
+.bezel{position:relative;border:1.5px solid var(--ink);border-radius:10px;overflow:hidden;background:linear-gradient(180deg,#fdfcfa,#f4f2ee)}
+canvas{display:block;width:100%;height:min(46vw,300px)}
+@media(max-width:520px){canvas{height:64vw}.ovl.br{display:none}.ovl.bl{max-width:88%}.rxhead{flex-wrap:wrap}}
+.ovl:empty,.ovl.hide{display:none}
+.ovl{position:absolute;font-size:11px;letter-spacing:.12em;text-transform:uppercase;color:var(--ink);background:rgba(251,250,248,.85);padding:3px 7px;border-radius:5px;border:1px solid var(--ink3)}
+.ovl.tl{left:10px;top:10px;display:flex;align-items:center;gap:7px}.ovl.tr{right:10px;top:10px;color:var(--ink2)}
+.ovl.bl{left:10px;bottom:10px;max-width:62%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;text-transform:none;letter-spacing:.02em;font-weight:600}
+.ovl.br{right:10px;bottom:10px;color:var(--ink2)}
+.dot{width:8px;height:8px;border-radius:50%;border:1.5px solid var(--ink);background:transparent;flex:none}
+.dot.live{background:var(--live);border-color:var(--live);box-shadow:0 0 0 3px rgba(47,158,109,.18)}
+.dot.wait{background:var(--warn);border-color:var(--warn)}.dot.off{background:var(--off);border-color:var(--off)}
+.sub2{margin:10px 6px 0;color:var(--ink2);font-size:13px;min-height:20px}
+/* panel of drawn controls */
+.panel{margin-top:16px;border:1.5px solid var(--ink);border-radius:18px;padding:16px 18px 18px;background:#fbfaf8;display:grid;gap:16px;grid-template-columns:1.6fr 1fr;align-items:start}
+@media(max-width:520px){.panel{grid-template-columns:1fr}}
+label,.lbl{display:block;font-size:10.5px;letter-spacing:.16em;text-transform:uppercase;color:var(--ink2);margin-bottom:6px}
+button{font:inherit;cursor:pointer;border:1.5px solid var(--ink);background:transparent;color:var(--ink);border-radius:12px;padding:14px 16px;font-weight:700;letter-spacing:.1em;text-transform:uppercase;font-size:14px;transition:.15s;display:flex;align-items:center;justify-content:center;gap:10px}
+button:hover{background:rgba(59,45,110,.06)}button:active{transform:translateY(1px)}
+button svg{width:16px;height:16px}
+.btns{display:grid;grid-template-columns:1fr 92px;gap:10px;grid-column:1/-1}
+.pwr{padding:20px 16px;font-size:17px}.pwr.on{background:var(--ink);color:#fff}
+.sw.on{background:var(--warn);border-color:var(--warn);color:#fff}
+input[type=range]{-webkit-appearance:none;appearance:none;width:100%;height:24px;background:transparent;margin:0}
+input[type=range]::-webkit-slider-runnable-track{height:1.5px;background:var(--ink)}
+input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;width:18px;height:18px;border-radius:50%;background:#fbfaf8;border:1.5px solid var(--ink);margin-top:-8.5px;box-shadow:inset 0 0 0 4px #fbfaf8,inset 0 0 0 5.5px var(--ink)}
+.ticks{display:flex;justify-content:space-between;font-size:9px;color:var(--ink2);letter-spacing:.06em;margin-top:2px}
+.seg{display:flex;border:1.5px solid var(--ink);border-radius:10px;overflow:hidden}
+.seg button{flex:1;border:0;border-radius:0;padding:10px 6px;font-size:11px;letter-spacing:.1em}.seg button+button{border-left:1.5px solid var(--ink)}
+.seg button.on{background:var(--ink);color:#fff}
+.vu{grid-column:1/-1;display:grid;gap:6px}
+.meter{display:grid;grid-template-columns:14px 1fr;gap:10px;align-items:center;font-size:10px;color:var(--ink2);font-weight:700}
+.bar{height:10px;border:1.5px solid var(--ink);border-radius:5px;position:relative;overflow:hidden;background:repeating-linear-gradient(90deg,transparent 0 9.5%,var(--grid) 9.5% 10%)}
+.bar i{position:absolute;inset:0;width:0;background:linear-gradient(90deg,var(--ink2),var(--ink) 80%,var(--off) 96%);transition:width .04s linear}
+.bar b{position:absolute;top:0;bottom:0;width:2px;background:var(--ink);left:0;transition:left .1s}
+.stats{grid-column:1/-1;display:flex;gap:16px;flex-wrap:wrap;font-size:11px;letter-spacing:.06em;color:var(--ink2);text-transform:uppercase}
+.foot{text-align:center;color:var(--ink2);font-size:13px;margin-top:18px}
+.unmute{position:fixed;inset:0;background:rgba(247,246,242,.9);display:none;place-items:center;z-index:9}.unmute.show{display:grid}
+.toast{position:fixed;left:50%;bottom:26px;transform:translateX(-50%) translateY(20px);opacity:0;background:var(--ink);color:#fff;padding:12px 18px;border-radius:12px;transition:.25s;pointer-events:none;font-weight:600}
+.toast.show{opacity:1;transform:translateX(-50%)}
+"""
+
 LISTEN_HTML = r"""<!doctype html><html><head><meta charset=utf-8><title>CCAST</title>
-<meta name=viewport content="width=device-width,initial-scale=1"><style>%CSS%</style></head><body>
-<div class=listen>
-<header><div class=brand><span class=logo>%ICON%</span><span id=station>CCAST</span></div><span class=pill id=lat class=mono>—</span></header>
-<section class=card>
- <div class=radio>
-  <div class=rtop><span class=dot id=dot></span><span id=st>Off air</span><span class=grow></span></div>
-  <div class=rnow id=now>—</div>
-  <div class=sub id=sub>Press Listen to tune in.</div>
- </div>
- <div class=btns><button class=big id=btn>%PLAY% Listen</button><button class="big lmute" id=lmute title="Mute on this computer only">🔇</button></div>
- <div class=meters><div class=meter>L<div class=bar id=mL><i></i><b></b></div></div><div class=meter>R<div class=bar id=mR><i></i><b></b></div></div></div>
- <div style="margin-top:22px"><label>Volume</label><input type=range id=vol min=0 max=1 step=0.01 value=1></div>
- <div style="margin-top:18px"><label>Playback</label>
-  <div class=seg id=seg><button data-m=smooth class=on>Smooth</button><button data-m=fast>Low latency</button></div></div>
- <div class=stats><span id=s1></span><span id=s2></span></div>
-</section>
-<div class=hint style="text-align:center">Use headphones. Keep this tab open in the background while you work — it reconnects by itself.</div>
-</div>
-<div class=unmute id=unmute><button class=big style="width:auto;padding:26px 44px" id=unmuteBtn>%PLAY% Tap to hear</button></div>
+<meta name=viewport content="width=device-width,initial-scale=1"><style>%LISTEN_CSS%</style></head><body>
+<svg class=bg viewBox="0 0 1000 1000" preserveAspectRatio="xMidYMid slice" fill="none" stroke="#3b2d6e" stroke-width="1">
+ <path d="M-50 720 L1050 180" opacity=".35"/><path d="M-50 900 L1050 420" opacity=".2"/>
+ <path d="M60 640 C130 560,160 560,220 640 S320 720,380 640" opacity=".45"/>
+ <path d="M620 300 C680 220,720 220,780 300 S880 380,940 300" opacity=".3" stroke-dasharray="4 5"/>
+ <path d="M700 820 C740 760,770 760,810 820 S880 880,920 820" opacity=".3"/>
+ <circle cx="220" cy="640" r="4" fill="#f7f6f2" opacity=".6"/><circle cx="780" cy="300" r="4" fill="#f7f6f2" opacity=".6"/><circle cx="470" cy="452" r="4" fill="#f7f6f2" opacity=".6"/>
+ <path d="M300 200 V320" stroke-dasharray="3 5" opacity=".4"/><path d="M860 560 V700" stroke-dasharray="3 5" opacity=".4"/>
+</svg>
+<main class=rx>
+ <header class=rxhead>
+  <div class=title><span class=name id=station>CCAST</span><span class=sub>receiver · ch 1</span></div>
+  <div class="readout mono" id=lat>buffer —</div>
+ </header>
+ <section class=scope>
+  <div class=bezel>
+   <canvas id=scope></canvas>
+   <div class="ovl tl mono"><span class=dot id=dot></span><span id=st>Off air</span></div>
+   <div class="ovl tr mono" id=s1></div>
+   <div class="ovl bl hide" id=now></div>
+   <div class="ovl br mono" id=s2></div>
+  </div>
+  <div class=sub2 id=sub>Press Listen to tune in.</div>
+ </section>
+ <section class=panel>
+  <div class=btns><button class=pwr id=btn>%PLAY% Listen</button><button class=sw id=lmute title="Mute on this computer only">Mute</button></div>
+  <div><label>Volume</label><input type=range id=vol min=0 max=1 step=0.01 value=1><div class="ticks mono"><span>−∞</span><span>−20</span><span>−10</span><span>−6</span><span>−3</span><span>0 dB</span></div></div>
+  <div><label>Buffer</label><div class=seg id=seg><button data-m=smooth class=on>Smooth</button><button data-m=fast>Low lat.</button></div></div>
+  <div class=vu><div class=meter>L<div class=bar id=mL><i></i><b></b></div></div><div class=meter>R<div class=bar id=mR><i></i><b></b></div></div></div>
+ </section>
+ <p class=foot>Use headphones · keep this tab open in the background — it reconnects by itself.</p>
+</main>
+<div class=unmute id=unmute><button class="pwr on" id=unmuteBtn>%PLAY% Tap to hear</button></div>
 <audio id=au autoplay playsinline></audio>
 <div class=toast id=toast></div>
 <script>%JS%
 const me='s-'+rnd();const sig=new Signal(me);const au=$('#au');
-let pc=null,listening=false,stopMeter=null,timer=null,pending=[],attempt=0,receiver=null;
+let pc=null,listening=false,stopRx=null,timer=null,pending=[],attempt=0,receiver=null,lmuted=false;
 const meta={station:'CCAST',now:'',live:false,muted:false,talking:false};
 let mode='smooth';try{mode=localStorage.cc_mode||'smooth';}catch(e){}
 // Chrome's jitter buffer is tuned for speech and time-stretches to chase latency, which warbles on music.
@@ -526,19 +595,56 @@ function applyMode(){const ms=mode==='smooth'?150:50;if(receiver){try{receiver.j
   document.querySelectorAll('#seg button').forEach(b=>b.classList.toggle('on',b.dataset.m===mode));}
 document.querySelectorAll('#seg button').forEach(b=>b.onclick=()=>{mode=b.dataset.m;try{localStorage.cc_mode=mode;}catch(e){}applyMode();});
 applyMode();
-try{au.volume=$('#vol').value=localStorage.cc_vol||1;}catch(e){}
-$('#vol').oninput=()=>{au.volume=$('#vol').value;try{localStorage.cc_vol=au.volume;}catch(e){}};
-function setState(cls,head,sub){$('#dot').className='dot '+cls;$('#st').textContent=head;$('#sub').textContent=sub||'';}
+// volume slider is in dB-ish: the range is linear but we map it perceptually
+try{$('#vol').value=localStorage.cc_vol||1;}catch(e){}
+const setVol=()=>{const v=+$('#vol').value;au.volume=v*v;try{localStorage.cc_vol=v;}catch(e){}};$('#vol').oninput=setVol;setVol();
+// ---------- state
 const connected=()=>pc&&pc.connectionState==='connected';
-function renderMeta(){$('#station').textContent=meta.station;document.title=meta.station;$('#now').textContent=meta.now||(meta.live?'Live from the studio':'—');
-  if(connected())showLive();}
-let lmuted=false;
-function showLive(){if(lmuted)setState('wait','Muted on this computer','Press 🔇 again to unmute');else if(meta.talking)setState('live','Teacher talking','');else if(meta.muted)setState('wait','Muted by the teacher','It comes back automatically');else setState('live','On air','');}
-$('#lmute').onclick=()=>{lmuted=!lmuted;au.muted=lmuted;$('#lmute').classList.toggle('on',lmuted);$('#lmute').textContent=lmuted?'🔈':'🔇';if(connected())showLive();};
+function setState(cls,head,sub){$('#dot').className='dot '+cls;$('#st').textContent=head;$('#sub').textContent=sub||'';scopeMode=cls==='live'?'live':cls==='wait'?'wait':'off';}
+function renderMeta(){$('#station').textContent=meta.station;document.title=meta.station;const n=meta.now||(meta.live&&connected()?'Live from the studio':'');$('#now').textContent=n;$('#now').classList.toggle('hide',!n);if(connected())showLive();}
+function showLive(){if(lmuted)setState('wait','Muted here','Press Mute again to unmute');else if(meta.talking)setState('live','Teacher talking','');else if(meta.muted)setState('wait','Muted by the teacher','It comes back automatically');else setState('live','On air','');}
+$('#lmute').onclick=()=>{lmuted=!lmuted;au.muted=lmuted;$('#lmute').classList.toggle('on',lmuted);$('#lmute').textContent=lmuted?'Unmute':'Mute';if(connected())showLive();};
 function schedule(ms){clearTimeout(timer);timer=setTimeout(()=>{if(listening&&!connected())hello();},ms);}
-function hello(){if(!listening)return;attempt++;sig.send('host',{type:'hello'});
-  setState('wait','Tuning in…','Looking for the studio');schedule(Math.min(15000,4000+attempt*2000));}
-function teardown(){if(pc){pc.onconnectionstatechange=null;pc.close();pc=null;}receiver=null;pending=[];lastBytes=lastT=lastJbD=lastJbN=0;if(stopMeter)stopMeter();stopMeter=null;au.srcObject=null;$('#lat').textContent='—';$('#s1').textContent=$('#s2').textContent='';}
+function hello(){if(!listening)return;attempt++;sig.send('host',{type:'hello'});setState('wait','Tuning in…','Looking for the studio');schedule(Math.min(15000,4000+attempt*2000));}
+function teardown(){if(pc){pc.onconnectionstatechange=null;pc.close();pc=null;}receiver=null;pending=[];lastBytes=lastT=lastJbD=lastJbN=0;if(stopRx)stopRx();stopRx=null;au.srcObject=null;$('#lat').textContent='buffer —';$('#s1').textContent='';$('#s2').textContent='';renderMeta();}
+// ---------- the oscilloscope: live time-domain traces of what is actually being received
+let scopeMode='off';const cv=$('#scope'),cx=cv.getContext('2d');let an=null,anR=null;const N=2048,bufL=new Float32Array(N),bufR=new Float32Array(N);
+function rx(stream){const AC=window.AudioContext||window.webkitAudioContext;const ac=new AC();const src=ac.createMediaStreamSource(stream);const split=ac.createChannelSplitter(2);src.connect(split);
+  an=ac.createAnalyser();anR=ac.createAnalyser();an.fftSize=anR.fftSize=N;an.smoothingTimeConstant=anR.smoothingTimeConstant=0;split.connect(an,0);split.connect(anR,1);
+  const bars=[$('#mL'),$('#mR')];const peak=[0,0];let alive=true;
+  (function vu(){if(!alive)return;[an,anR].forEach((a,i)=>{a.getFloatTimeDomainData(i?bufR:bufL);const b=i?bufR:bufL;let s=0;for(let k=0;k<N;k++)s+=b[k]*b[k];
+    const db=20*Math.log10(Math.sqrt(s/N)+1e-9);const pct=Math.max(0,Math.min(100,(db+60)/60*100));peak[i]=Math.max(pct,peak[i]-0.6);
+    bars[i].querySelector('i').style.width=pct+'%';bars[i].querySelector('b').style.left=peak[i]+'%';});requestAnimationFrame(vu);})();
+  if(ac.state==='suspended')ac.resume().catch(()=>{});
+  return()=>{alive=false;an=anR=null;bars.forEach(e=>{e.querySelector('i').style.width=0;e.querySelector('b').style.left=0;});ac.close().catch(()=>{});};}
+function fit(){const r=cv.getBoundingClientRect(),d=devicePixelRatio||1;if(cv.width!==Math.round(r.width*d)||cv.height!==Math.round(r.height*d)){cv.width=Math.round(r.width*d);cv.height=Math.round(r.height*d);}}
+addEventListener('resize',fit);
+const INK=getComputedStyle(document.documentElement).getPropertyValue('--ink').trim()||'#3b2d6e',INK2='#8e7fc4',GRID='rgba(59,45,110,.14)';
+let t0=performance.now();
+function draw(){fit();const W=cv.width,H=cv.height,d=devicePixelRatio||1;cx.clearRect(0,0,W,H);
+  // graticule
+  cx.lineWidth=1*d;cx.strokeStyle=GRID;cx.setLineDash([3*d,5*d]);
+  for(let i=1;i<10;i++){const x=W*i/10;cx.beginPath();cx.moveTo(x,0);cx.lineTo(x,H);cx.stroke();}
+  for(let i=1;i<8;i++){const y=H*i/8;cx.beginPath();cx.moveTo(0,y);cx.lineTo(W,y);cx.stroke();}
+  cx.setLineDash([]);cx.strokeStyle='rgba(59,45,110,.3)';cx.beginPath();cx.moveTo(0,H/2);cx.lineTo(W,H/2);cx.stroke();cx.beginPath();cx.moveTo(W/2,0);cx.lineTo(W/2,H);cx.stroke();
+  const t=(performance.now()-t0)/1000;
+  if(an&&scopeMode!=='off'&&!lmuted){
+    // trigger: first rising zero crossing in the first third, like a real scope
+    let start=0;for(let k=1;k<N/3;k++){if(bufL[k-1]<0&&bufL[k]>=0){start=k;break;}}
+    const span=Math.min(N-start,1200),amp=H*0.42;
+    const trace=(b,color,w)=>{cx.strokeStyle=color;cx.lineWidth=w*d;cx.beginPath();for(let k=0;k<span;k++){const x=W*k/span,y=H/2-b[start+k]*amp;k?cx.lineTo(x,y):cx.moveTo(x,y);}cx.stroke();};
+    // envelope ghost (peak follower), dashed, like the construction lines in the drawings
+    cx.setLineDash([2*d,4*d]);cx.strokeStyle='rgba(142,127,196,.55)';cx.lineWidth=1*d;let env=0;cx.beginPath();
+    for(let k=0;k<span;k++){const a=Math.abs(bufL[start+k]);env=a>env?a:env*0.995;const x=W*k/span;k?cx.lineTo(x,H/2-env*amp):cx.moveTo(x,H/2-env*amp);}cx.stroke();
+    cx.beginPath();env=0;for(let k=0;k<span;k++){const a=Math.abs(bufL[start+k]);env=a>env?a:env*0.995;const x=W*k/span;k?cx.lineTo(x,H/2+env*amp):cx.moveTo(x,H/2+env*amp);}cx.stroke();cx.setLineDash([]);
+    trace(bufR,'rgba(142,127,196,.9)',1.2);trace(bufL,INK,1.6);
+  }else if(scopeMode==='wait'){ // sweeping dot on the baseline
+    const x=((t*0.35)%1)*W;cx.fillStyle=INK;cx.beginPath();cx.arc(x,H/2,3*d,0,7);cx.fill();cx.strokeStyle='rgba(59,45,110,.35)';cx.setLineDash([4*d,6*d]);cx.beginPath();cx.moveTo(0,H/2);cx.lineTo(x,H/2);cx.stroke();cx.setLineDash([]);
+  }else{ // flat line, faint noise
+    cx.strokeStyle=INK2;cx.lineWidth=1.2*d;cx.beginPath();for(let k=0;k<200;k++){const x=W*k/199,y=H/2+(Math.sin(k*1.7+t*3)*0.3+Math.sin(k*0.31-t)*0.2)*d;k?cx.lineTo(x,y):cx.moveTo(x,y);}cx.stroke();}
+  requestAnimationFrame(draw);}
+draw();
+// ---------- signalling
 sig.onmsg=async(from,d)=>{if(from!=='host')return;
   if(d.type==='meta'){Object.assign(meta,d);renderMeta();return;}
   if(!listening)return;
@@ -547,36 +653,33 @@ sig.onmsg=async(from,d)=>{if(from!=='host')return;
   else if(d.type==='host-stopped'){teardown();setState('wait','Studio went off air','You’ll reconnect automatically when it starts again');schedule(8000);}
   else if(d.type==='offer'){teardown();pc=new RTCPeerConnection({iceServers:[]});pc.cid=d.cid;pc.hid=d.hid;
     pc.ontrack=e=>{receiver=e.receiver;applyMode();au.srcObject=e.streams[0];au.play().then(()=>$('#unmute').classList.remove('show')).catch(()=>$('#unmute').classList.add('show'));
-      if(stopMeter)stopMeter();stopMeter=meter(e.streams[0],[$('#mL'),$('#mR')]);};
+      if(stopRx)stopRx();stopRx=rx(e.streams[0]);};
     pc.onicecandidate=e=>{if(e.candidate)sig.send('host',{type:'ice',cid:pc.cid,c:e.candidate});};
     pc.onconnectionstatechange=()=>{const s=pc.connectionState;
-      if(s==='connected'){attempt=0;clearTimeout(timer);showLive();}
+      if(s==='connected'){attempt=0;clearTimeout(timer);showLive();renderMeta();}
       else if(s==='disconnected'){setState('wait','Reconnecting…','');schedule(3000);}
       else if(s==='failed'){setState('wait','Reconnecting…','');hello();}};
     await pc.setRemoteDescription(d.sdp);const a=await pc.createAnswer();a.sdp=stereo(a.sdp);await pc.setLocalDescription(a);
     sig.send('host',{type:'answer',cid:pc.cid,sdp:pc.localDescription});
     for(const c of pending)await pc.addIceCandidate(c).catch(()=>{});pending=[];schedule(12000);}
-  else if(d.type==='ice'){if(pc&&pc.cid===d.cid){if(pc.remoteDescription)await pc.addIceCandidate(d.c).catch(()=>{});else pending.push(d.c);}
-    else pending.push(d.c);}};
+  else if(d.type==='ice'){if(pc&&pc.cid===d.cid){if(pc.remoteDescription)await pc.addIceCandidate(d.c).catch(()=>{});else pending.push(d.c);}else pending.push(d.c);}};
 sig.onreset=()=>{if(!listening)return;if(connected())showLive();else hello();};   // media is peer-to-peer: a server restart doesn't touch a live connection
-sig.onoffline=()=>{if(listening&&!connected())setState('off','Studio computer not reachable','Are you on the same Wi-Fi? Retrying…');};
+sig.onoffline=()=>{if(listening&&!connected())setState('off','Studio not reachable','Are you on the same Wi-Fi? Retrying…');};
 addEventListener('online',()=>{if(listening)hello();});
 document.addEventListener('visibilitychange',()=>{if(!document.hidden&&listening&&!connected())hello();});
 $('#unmuteBtn').onclick=()=>{au.play().then(()=>$('#unmute').classList.remove('show')).catch(()=>{});};
 $('#btn').onclick=()=>{if(!listening){listening=true;au.play().catch(()=>{});$('#btn').innerHTML=ICON_STOP+' Stop';$('#btn').classList.add('on');attempt=0;hello();}
-  else{listening=false;clearTimeout(timer);teardown();sig.send('host',{type:'bye'});$('#btn').innerHTML=ICON_PLAY+' Listen';$('#btn').classList.remove('on');setState('','Stopped','Press Listen to tune in again.');}};
+  else{listening=false;clearTimeout(timer);teardown();sig.send('host',{type:'bye'});$('#btn').innerHTML=ICON_PLAY+' Listen';$('#btn').classList.remove('on');setState('','Off air','Press Listen to tune in again.');}};
 addEventListener('pagehide',()=>{if(listening)navigator.sendBeacon('/api/msg',JSON.stringify({from:me,to:'host',data:{type:'bye'}}));});
-// live stats
+// ---------- readouts
 let lastBytes=0,lastT=0,lastJbD=0,lastJbN=0;
 setInterval(async()=>{if(!connected())return;try{const st=await pc.getStats();let rtt=null,lost=null,jb=null,bytes=0,codec='';
   st.forEach(r=>{if(r.type==='candidate-pair'&&r.nominated&&r.currentRoundTripTime!=null)rtt=r.currentRoundTripTime;
-    if(r.type==='inbound-rtp'){lost=r.packetsLost;bytes=r.bytesReceived;
-      const dN=(r.jitterBufferEmittedCount||0)-lastJbN,dD=(r.jitterBufferDelay||0)-lastJbD;if(dN>0)jb=dD/dN;
-      lastJbN=r.jitterBufferEmittedCount||0;lastJbD=r.jitterBufferDelay||0;}
+    if(r.type==='inbound-rtp'){lost=r.packetsLost;bytes=r.bytesReceived;const dN=(r.jitterBufferEmittedCount||0)-lastJbN,dD=(r.jitterBufferDelay||0)-lastJbD;if(dN>0)jb=dD/dN;lastJbN=r.jitterBufferEmittedCount||0;lastJbD=r.jitterBufferDelay||0;}
     if(r.type==='codec'&&/opus/i.test(r.mimeType))codec='Opus '+(r.channels===2?'stereo':'mono');});
   const now=performance.now();const kbps=lastT?Math.round((bytes-lastBytes)*8/((now-lastT)/1000)/1000):0;lastBytes=bytes;lastT=now;
-  $('#lat').textContent=(jb!=null?'buffer '+Math.round(jb*1000)+' ms':'—');
-  $('#s1').textContent=codec+(kbps?' · '+kbps+' kb/s':'')+(rtt!=null?' · network '+Math.round(rtt*1000)+' ms':'');$('#s2').textContent=lost!=null?'lost '+lost:'';}catch(e){}},2000);
+  $('#lat').textContent=(jb!=null?'buffer '+Math.round(jb*1000)+' ms':'buffer —');
+  $('#s1').textContent=codec+(kbps?' · '+kbps+' kb/s':'');$('#s2').textContent=(rtt!=null?'net '+Math.round(rtt*1000)+' ms · ':'')+(lost!=null?'lost '+lost:'');}catch(e){}},2000);
 renderMeta();sig.run();
 </script></body></html>"""
 
@@ -584,7 +687,7 @@ renderMeta();sig.run();
 ICON = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round"><path d="M4 12h1M8 8v8M12 4v16M16 8v8M20 12h1"/></svg>'
 PLAY = '<svg viewBox="0 0 24 24" width="18" height="18" fill="currentColor" style="vertical-align:-3px"><path d="M8 5v14l11-7z"/></svg>'
 STOP = '<svg viewBox="0 0 24 24" width="16" height="16" fill="currentColor" style="vertical-align:-2px"><rect x="6" y="6" width="12" height="12" rx="2"/></svg>'
-for _k, _v in (("%CSS%", CSS), ("%JS%", JS_COMMON), ("%ICON%", ICON), ("%PLAY%", PLAY), ("%STOP%", STOP)):
+for _k, _v in (("%CSS%", CSS), ("%LISTEN_CSS%", LISTEN_CSS), ("%JS%", JS_COMMON), ("%ICON%", ICON), ("%PLAY%", PLAY), ("%STOP%", STOP)):
     HOST_HTML = HOST_HTML.replace(_k, _v); LISTEN_HTML = LISTEN_HTML.replace(_k, _v)
 
 try:

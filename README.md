@@ -29,8 +29,10 @@ The desk while on air:
 - Click the name **CCAST** in the header to rename it; it shows on every receiver.
 - Students have their own **🔇 mute** (local only) next to Listen.
 
-Students choose **Smooth** (steady 150 ms buffer, never warbles — default) or
-**Low latency** (~50 ms). Their page reconnects by itself after anything.
+The receiver is drawn as an instrument: a live oscilloscope of what the
+student actually hears (two traces, envelope, scope readouts), Listen/Mute,
+volume, and **Smooth** (steady 150 ms buffer — default) / **Low latency**
+(~50 ms). It reconnects by itself after anything.
 
 ## Getting your mix onto channels 1–2
 Chrome captures **only channels 1–2** of the device you pick. Three ways:
