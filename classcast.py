@@ -476,7 +476,8 @@ function addStem(name,deviceId,persist=true){const g=ac.createGain(),d=ac.create
 function removeStem(s){if(stems.length<=1)return;if(s.src)s.src.disconnect();if(s.stream)s.stream.getTracks().forEach(t=>t.stop());s.g.disconnect();stems=stems.filter(x=>x!==s);saveStems();renderStrips();if(live)renegotiateAll();updateGo();}
 function saveStems(){try{localStorage.cc_stems=JSON.stringify(stems.map(s=>({name:s.name,deviceId:s.deviceId})));}catch(e){}}
 function ramp(g,v,ms){const t=ac.currentTime;g.gain.cancelScheduledValues(t);g.gain.setValueAtTime(g.gain.value,t);g.gain.linearRampToValueAtTime(v,t+ms/1000);}
-function applyGains(){for(const s of stems)ramp(s.g,muted?0:(talking?0.25:1),60);ramp(micGain,talking?1:0,40);}
+function applyGains(){for(const s of stems){ramp(s.g,muted?0:(talking?0.25:1),60);if(s.stream)for(const t of s.stream.getAudioTracks())t.enabled=!muted;}   // monitor graph mirrors what is sent
+  ramp(micGain,talking?1:0,40);if(micStream)for(const t of micStream.getAudioTracks())t.enabled=talking;}
 function engine(){if(ac.state!=='running')ac.resume().catch(()=>{});$('#acwarn').style.display=ac.state==='running'?'none':'';}
 ['pointerdown','keydown'].forEach(ev=>addEventListener(ev,engine,{capture:true}));ac.onstatechange=engine;
 // ---------- address / QR / station
@@ -535,9 +536,12 @@ function disarm(s){if(s.src)s.src.disconnect();s.src=null;if(s.stream)s.stream.g
 function armAll(){stems.forEach(s=>{if(!s.stream)arm(s);});}
 async function openMic(){const id=$('#mic').value;if(!id)return false;
   try{const s=await navigator.mediaDevices.getUserMedia({audio:{deviceId:{exact:id},channelCount:{ideal:1},echoCancellation:true,noiseSuppression:true,autoGainControl:true}});
-    if(micStream)micStream.getTracks().forEach(t=>t.stop());if(micSrc)micSrc.disconnect();micStream=s;micSrc=ac.createMediaStreamSource(s);micSrc.connect(micGain);try{localStorage.cc_mic=id;}catch(e){}return true;}
+    if(micStream)micStream.getTracks().forEach(t=>t.stop());if(micSrc)micSrc.disconnect();micStream=s;micSrc=ac.createMediaStreamSource(s);micSrc.connect(micGain);
+    for(const t of s.getAudioTracks()){t.enabled=talking;try{t.contentHint='speech';}catch(e){}}try{localStorage.cc_mic=id;}catch(e){}
+    if(live)for(const p of peers.values()){if(p.senders.tb)p.senders.tb.replaceTrack(s.getAudioTracks()[0]).catch(()=>{});}   // hot-swap the talkback mic
+    return true;}
   catch(e){showErr('Could not open the talkback mic: '+e.message);return false;}}
-function srcLine(){const armed=stems.filter(s=>s.stream);$('#src').innerHTML=armed.length===1?describe(armed[0].stream.getAudioTracks()[0])+' · Opus 320 kb/s':armed.length+' channels · Opus 320 kb/s each · 10 ms frames';}
+function srcLine(){const armed=stems.filter(s=>s.stream);$('#src').innerHTML=(armed.length===1?describe(armed[0].stream.getAudioTracks()[0])+' · Opus 320 kb/s':armed.length+' channels · Opus 320 kb/s each')+' · 10 ms frames · direct (no mixer in the path)';}
 function updateGo(){const ok=stems.some(s=>s.stream);$('#go').disabled=!ok;
   $('#gosub').textContent=!ok?'Select an input first':hasSignal?(stems.length>1?stems.length+' channels · stereo · Opus 320 kb/s':'Stereo · 48 kHz · Opus 320 kb/s'):'No signal yet — you can still go live';
   $('#sig').textContent=!ok?'No input':hasSignal?'Signal present':'Silence';$('#sig').style.color=hasSignal?'var(--live)':'var(--ink2)';}
@@ -610,12 +614,14 @@ midiSetup();
 function render(){$('#n').textContent=[...peers.values()].filter(p=>p.pc.connectionState==='connected').length;}
 function dropPeer(id){const p=peers.get(id);if(p){p.pc.close();peers.delete(id);render();}}
 function tuneSender(sn,kbps){try{const prm=sn.getParameters();prm.encodings=prm.encodings&&prm.encodings.length?prm.encodings:[{}];prm.encodings[0].maxBitrate=kbps*1000;prm.encodings[0].priority='high';prm.encodings[0].networkPriority='high';sn.setParameters(prm).catch(()=>{});}catch(e){}}
-function stemList(pc,p){const byTrack=new Map();for(const s of stems)if(s.stream)byTrack.set(s.track,s);byTrack.set(tbTrack,{id:'tb',name:'Talkback'});
+const sendTrack=s=>s.stream.getAudioTracks()[0];              // the raw device track: no mixer in the path
+const tbSendTrack=()=>micStream?micStream.getAudioTracks()[0]:tbTrack;
+function stemList(pc,p){const byTrack=new Map();for(const s of stems)if(s.stream)byTrack.set(sendTrack(s),s);byTrack.set(tbSendTrack(),{id:'tb',name:'Talkback'});
   return pc.getTransceivers().map(t=>{const s=byTrack.get(t.sender.track);return s?{mid:t.mid,id:s.id,name:s.name,kind:s.id==='tb'?'tb':'ch'}:null;}).filter(Boolean);}
 function makePeer(id){const old=peers.get(id);if(old)old.pc.close();
   const pc=new RTCPeerConnection({iceServers:[]});const p={pc,cid:rnd(),pending:[],senders:{}};peers.set(id,p);
-  for(const s of stems){if(!s.stream)continue;const sn=pc.addTrack(s.track,s.dest.stream);p.senders[s.id]=sn;tuneSender(sn,320);}
-  const tsn=pc.addTrack(tbTrack,tbDest.stream);p.senders.tb=tsn;tuneSender(tsn,96);
+  const added=new Set();for(const s of stems){if(!s.stream)continue;const tr=sendTrack(s);if(added.has(tr))continue;added.add(tr);const sn=pc.addTrack(tr,s.stream);p.senders[s.id]=sn;tuneSender(sn,320);}   // two channels on one device share a track
+  const tsn=pc.addTrack(tbSendTrack(),micStream||tbDest.stream);p.senders.tb=tsn;tuneSender(tsn,96);
   // data channel: clock timeline + clock-offset pings (unordered, no retransmits: newest wins)
   const dc=pc.createDataChannel('clock',{ordered:false,maxRetransmits:0});p.dc=dc;
   dc.onopen=()=>{try{dc.send(clockMsg());}catch(e){}};
@@ -640,11 +646,11 @@ sig.onmsg=async(from,d)=>{const p=peers.get(from);
 sig.onreset=()=>{sig.send('*',{type:'host-ready',hid:HID});broadcastMeta();};
 sig.onoffline=()=>{toast('Server not reachable — click the CCAST app to start it again');};
 // ---------- desk actions
-$('#go').onclick=()=>{if(!stems.some(s=>s.stream))return;engine();live=true;muted=false;talking=false;t0=Date.now();applyGains();srcLine();
+$('#go').onclick=async()=>{if(!stems.some(s=>s.stream))return;engine();if(!micStream)await openMic();live=true;muted=false;talking=false;t0=Date.now();applyGains();srcLine();
   $('#idle').hidden=true;$('#live').hidden=false;setOnAir();$('#mute').classList.remove('on');$('#talk').classList.remove('on');
   renegotiateAll();sig.send('*',{type:'host-ready',hid:HID});broadcastMeta();};
 $('#mute').onclick=()=>{if(!live)return;muted=!muted;applyGains();$('#mute').classList.toggle('on',muted);setOnAir();broadcastMeta();};
-async function setTalk(on){if(!live||on===talking)return;if(on&&!micStream&&!(await openMic()))return;talking=on;applyGains();$('#talk').classList.toggle('on',on);setOnAir();broadcastMeta();}
+async function setTalk(on){if(!live||on===talking)return;if(on&&!micStream){if(!(await openMic()))return;renegotiateAll();}talking=on;applyGains();$('#talk').classList.toggle('on',on);setOnAir();broadcastMeta();}
 (function ptt(){const b=$('#talk');let down=0,latched=false;
   b.onpointerdown=e=>{e.preventDefault();b.setPointerCapture(e.pointerId);down=Date.now();if(latched){latched=false;setTalk(false);down=0;}else setTalk(true);};
   const up=()=>{if(!down)return;const held=Date.now()-down;down=0;if(held<350){latched=true;}else setTalk(false);};
@@ -771,7 +777,7 @@ LISTEN_HTML = r"""<!doctype html><html><head><meta charset=utf-8><title>CCAST</t
     <div class=btnlbl><div class="knob sm" id=clkknob title="Click level"></div><span class=lbl>level</span></div>
    </div>
    <div class=btnlbl><div class=sw id=snd title="Click sound"><span>stick</span><span>shaker</span></div><span class=lbl>sound</span></div>
-   <div class=btnlbl><div class=sw id=seg title="Jitter buffer: steady 150 ms, or as low as the network allows"><span>smooth</span><span>low lat</span></div><span class=lbl>buffer</span></div>
+   <div class=btnlbl><div class=sw id=seg title="Jitter buffer: steady 150 ms, or the minimum the network allows"><span>smooth</span><span>min</span></div><span class=lbl>buffer</span></div>
   </div>
  </section>
 </main>
@@ -784,8 +790,11 @@ let pc=null,listening=false,timer=null,pending=[],attempt=0,lmuted=false;
 const meta={station:'CCAST',now:'',live:false,muted:false,talking:false};
 // ---------- playback bus (Web Audio): every received channel -> its fader -> master -> speakers
 const AC=window.AudioContext||window.webkitAudioContext;const rac=new AC({latencyHint:'interactive'});
-const master=rac.createGain();master.connect(rac.destination);const bus=rac.createGain();bus.connect(master);   // bus = pre-master sum for meters/scope
-const split=rac.createChannelSplitter(2);bus.connect(split);const N=2048,bufL=new Float32Array(N),bufR=new Float32Array(N);
+const master=rac.createGain();master.connect(rac.destination);const bus=rac.createGain();bus.connect(master);   // mixing path (only used with 2+ channels)
+const abus=rac.createGain();                                                                                 // analysis-only sum for meters/scope (never audible)
+const split=rac.createChannelSplitter(2);abus.connect(split);const N=2048,bufL=new Float32Array(N),bufR=new Float32Array(N);
+const IOS=/iP(hone|ad|od)/.test(navigator.userAgent);let directMode=false;
+const clickGain=rac.createGain();clickGain.gain.value=0;const clickMaster=rac.createGain();clickGain.connect(clickMaster);clickMaster.connect(rac.destination);clickGain.connect(abus);   // click: own path to the speakers
 const an=rac.createAnalyser(),anR=rac.createAnalyser();an.fftSize=anR.fftSize=N;an.smoothingTimeConstant=anR.smoothingTimeConstant=0;split.connect(an,0);split.connect(anR,1);
 const chans=new Map();   // stemId -> {id,name,kind,gain,src,el,level,muted,solo}
 let receivers=[];
@@ -793,8 +802,8 @@ function ramp(g,v,ms){const t=rac.currentTime;g.gain.cancelScheduledValues(t);g.
 // ---------- buffer switch
 let mode='smooth';try{mode=localStorage.cc_mode||'smooth';}catch(e){}
 // Chrome's jitter buffer is tuned for speech and time-stretches to chase latency, which warbles on music.
-// A fixed target keeps it steady. Low latency: 20 ms floor — NetEq still rises above it if the network gets jittery.
-function applyMode(){const ms=mode==='smooth'?150:20;for(const r of receivers){try{r.jitterBufferTarget=ms;}catch(e){}try{if('playoutDelayHint' in r)r.playoutDelayHint=ms/1000;}catch(e){}}$('#seg').classList.toggle('fast',mode==='fast');}
+// Smooth: a fixed 150 ms. Min: target 0 — NetEq then holds only what the measured network jitter needs (≈10–20 ms on a good LAN).
+function applyMode(){const ms=mode==='smooth'?150:0;for(const r of receivers){try{r.jitterBufferTarget=ms;}catch(e){}try{if('playoutDelayHint' in r)r.playoutDelayHint=ms/1000;}catch(e){}}$('#seg').classList.toggle('fast',mode==='fast');}
 $('#seg').onclick=()=>{mode=mode==='smooth'?'fast':'smooth';try{localStorage.cc_mode=mode;}catch(e){}applyMode();};applyMode();
 // ---------- knobs (0..1, perceptual: gain = v^2) — drag vertically or scroll, double-click resets
 function makeKnob(el,v,onchange,size){el.innerHTML=`<svg viewBox="0 0 100 100" fill="none" stroke="#3b2d6e" stroke-width="1.5"><g class=ticks></g><circle cx="50" cy="50" r="30" fill="#fbfaf8"/><circle cx="50" cy="50" r="24" stroke-dasharray="1.5 3.2" opacity=".6"/><g class=ind><line x1="50" y1="50" x2="50" y2="24" stroke-width="2.5" stroke-linecap="round"/></g></svg><div class="val mono"></div>`;
@@ -805,11 +814,18 @@ function makeKnob(el,v,onchange,size){el.innerHTML=`<svg viewBox="0 0 100 100" f
   let y0=null,v0=0;el.onpointerdown=e=>{el.setPointerCapture(e.pointerId);y0=e.clientY;v0=v;};el.onpointermove=e=>{if(y0===null)return;k.set(v0+(y0-e.clientY)/160);};
   el.onpointerup=el.onpointercancel=()=>{y0=null;};el.onwheel=e=>{e.preventDefault();k.set(v-Math.sign(e.deltaY)*0.03);};el.ondblclick=()=>k.set(1);k.set(v);return k;}
 let vol=1;try{vol=parseFloat(localStorage.cc_vol);if(isNaN(vol))vol=1;}catch(e){}
-const volKnob=makeKnob($('#knob'),vol,v=>{vol=v;ramp(master,lmuted?0:v*v,30);try{localStorage.cc_vol=v;}catch(e){}});
+const volKnob=makeKnob($('#knob'),vol,v=>{vol=v;try{localStorage.cc_vol=v;}catch(e){}if(typeof applyMix==='function')applyMix();});
 // ---------- cue mixer (appears when the studio sends more than one channel)
 let levels={};try{levels=JSON.parse(localStorage.cc_levels||'{}');}catch(e){}
 function chanGain(c){if(c.kind==='tb')return 1;const anySolo=[...chans.values()].some(x=>x.kind!=='tb'&&x.solo);const audible=!c.muted&&(!anySolo||c.solo);return audible?c.level*c.level:0;}
-function applyMix(){const active={};for(const c of chans.values()){ramp(c.gain,chanGain(c),40);if(c.kind!=='tb')active[c.id]=chanGain(c)>0;}
+const duck=()=>meta.talking?0.25:1;   // programme ducks under talkback — done here, so the studio needs no mixer in its send path
+function applyMix(){const active={};const list=[...chans.values()];directMode=!IOS&&list.filter(c=>c.kind!=='tb').length<=1;
+  // direct: the media element plays the track itself (shortest path). mixing: elements muted, Web Audio sums the channels.
+  const vm=lmuted?0:vol*vol;
+  for(const c of list){const g=chanGain(c)*(c.kind==='tb'?1:duck());
+    if(directMode){c.sink.muted=false;c.sink.volume=Math.min(1,g*vm);ramp(c.gain,0,20);}else{c.sink.muted=true;c.sink.volume=1;ramp(c.gain,g,40);}
+    if(c.kind!=='tb')active[c.id]=chanGain(c)>0;}
+  ramp(master,directMode?0:vm,30);ramp(clickMaster,vm,30);
   clearTimeout(applyMix.t);applyMix.t=setTimeout(()=>sig.send('host',{type:'active',active}),250);   // tell the studio which channels to actually send
   for(const c of chans.values())if(c.el){c.el.classList.toggle('muted',c.muted);c.el.classList.toggle('solo',c.solo);}}
 function renderMixer(){const list=[...chans.values()].filter(c=>c.kind!=='tb');const mx=$('#mixer');mx.hidden=list.length<2;mx.innerHTML='';if(list.length<2)return;
@@ -818,16 +834,17 @@ function renderMixer(){const list=[...chans.values()].filter(c=>c.kind!=='tb');c
     el.querySelector('.cm').onclick=()=>{c.muted=!c.muted;applyMix();};el.querySelector('.cs').onclick=()=>{c.solo=!c.solo;applyMix();};mx.append(el);}
   applyMix();}
 function addChan(info,stream){const g=rac.createGain();g.gain.value=0;const src=rac.createMediaStreamSource(stream);src.connect(g);g.connect(bus);
-  // Chrome only delivers remote WebRTC audio into Web Audio while the stream is also attached to a media element
+  const tap=rac.createGain();src.connect(tap);tap.connect(abus);                       // analysis tap, pre-fader
+  // the media element: in direct mode it IS the playback path; in mixing mode it stays muted (Chrome needs it attached for Web Audio to receive the track)
   const el=document.createElement('audio');el.srcObject=stream;el.muted=true;el.autoplay=true;el.playsInline=true;$('#sinks').append(el);el.play().catch(()=>{});
-  const c={id:info.id,name:info.name,kind:info.kind,gain:g,src,sink:el,level:info.kind==='tb'?1:(levels[info.name]!=null?levels[info.name]:1),muted:false,solo:false};chans.set(c.id,c);ramp(g,chanGain(c),60);}
+  const c={id:info.id,name:info.name,kind:info.kind,gain:g,src,tap,sink:el,level:info.kind==='tb'?1:(levels[info.name]!=null?levels[info.name]:1),muted:false,solo:false};chans.set(c.id,c);applyMix();}
 function clearChans(){for(const c of chans.values()){try{c.src.disconnect();}catch(e){}c.sink.remove();}chans.clear();$('#mixer').hidden=true;$('#mixer').innerHTML='';}
 // ---------- state
 const connected=()=>pc&&pc.connectionState==='connected';let scopeMode='off';
 function setState(cls,head,sub){$('#dot').className='dot '+cls;$('#st').textContent=head;$('#sub').textContent=sub||'';scopeMode=cls==='live'?'live':cls==='wait'?'wait':'off';}
 function renderMeta(){$('#station').textContent=meta.station;document.title=meta.station;const n=meta.now||(meta.live&&connected()?'Live from the studio':'');$('#now').textContent=n;$('#now').classList.toggle('hide',!n);if(connected())showLive();}
 function showLive(){if(lmuted)setState('wait','Muted here','Press mute again to unmute');else if(meta.talking)setState('live','Teacher talking','');else if(meta.muted)setState('wait','Muted by the teacher','It comes back automatically');else setState('live','On air',chans.size>2?'Your own cue mix — knobs, mute and solo per channel':'');}
-$('#lmute').onclick=()=>{lmuted=!lmuted;ramp(master,lmuted?0:vol*vol,30);$('#lmute').classList.toggle('on',lmuted);if(connected())showLive();};
+$('#lmute').onclick=()=>{lmuted=!lmuted;applyMix();$('#lmute').classList.toggle('on',lmuted);if(connected())showLive();};
 function schedule(ms){clearTimeout(timer);timer=setTimeout(()=>{if(listening&&!connected())hello();},ms);}
 function hello(){if(!listening)return;attempt++;sig.send('host',{type:'hello'});setState('wait','Tuning in…','Looking for the studio');schedule(Math.min(15000,4000+attempt*2000));}
 function teardown(){if(pc){pc.onconnectionstatechange=null;pc.close();pc=null;}receivers=[];pending=[];if(dc){clearInterval(dc._pinger);dc=null;}clk.line=null;clk.running=false;clk.offset=null;clk.bestRtt=Infinity;clk.seq=-1;killClicks();renderClock();lastBytes=lastT=lastJbD=lastJbN=0;clearChans();$('#lat').textContent='—';$('#s1').textContent='';renderMeta();}
@@ -861,7 +878,7 @@ draw();
 // delayed by the measured stream latency so it lands on the music the student actually hears.
 const clk={on:false,sound:'stick',level:0.6,line:null,running:false,bpm:0,bpb:4,offset:null,bestRtt:Infinity,lastBeat:-1,seq:-1,nodes:[]};
 try{clk.sound=localStorage.cc_snd||'stick';clk.level=parseFloat(localStorage.cc_clk);if(isNaN(clk.level))clk.level=0.6;}catch(e){}
-const clickGain=rac.createGain();clickGain.gain.value=0;clickGain.connect(bus);
+
 const noiseBuf=(()=>{const b=rac.createBuffer(1,rac.sampleRate*0.3,rac.sampleRate);const d=b.getChannelData(0);for(let i=0;i<d.length;i++)d[i]=Math.random()*2-1;return b;})();
 function acTime(tPerf){const ts=rac.getOutputTimestamp?rac.getOutputTimestamp():null;if(ts&&ts.contextTime!=null)return ts.contextTime+(tPerf-ts.performanceTime)/1000;return rac.currentTime+(tPerf-performance.now())/1000;}
 function stick(t,accent){const n=rac.createBufferSource();n.buffer=noiseBuf;const bp=rac.createBiquadFilter();bp.type='bandpass';bp.frequency.value=accent?2300:1900;bp.Q.value=5;
@@ -905,7 +922,7 @@ makeKnob($('#clkknob'),clk.level,v=>{clk.level=v;try{localStorage.cc_clk=v;}catc
 // ---------- signalling
 let stemInfo=[];
 sig.onmsg=async(from,d)=>{if(from!=='host')return;
-  if(d.type==='meta'){Object.assign(meta,d);renderMeta();return;}
+  if(d.type==='meta'){Object.assign(meta,d);renderMeta();applyMix();return;}
   if(!listening)return;
   if(d.type==='wait'){setState('wait','Studio is off air','You’ll be connected automatically when it goes live');schedule(6000);}
   else if(d.type==='host-ready'){if(!(connected()&&pc.hid===d.hid))hello();}
@@ -941,10 +958,12 @@ setInterval(async()=>{if(!connected())return;try{const st=await pc.getStats();le
     if(r.type==='codec'&&/opus/i.test(r.mimeType))codec='Opus '+(r.channels===2?'stereo':'mono');});
   const dN=jbN-lastJbN,dD=jbD-lastJbD;const jb=dN>0?dD/dN:null;lastJbN=jbN;lastJbD=jbD;
   const now=performance.now();const kbps=lastT?Math.round((bytes-lastBytes)*8/((now-lastT)/1000)/1000):0;lastBytes=bytes;lastT=now;
-  const out=(rac.outputLatency||0)+(rac.baseLatency||0);   // the audible path is Web Audio: jitter buffer -> graph -> device
-  // estimate: capture ≈10 ms + studio mixer ≈3 ms + 10 ms Opus frame + half the round trip + jitter buffer + this page's output latency
-  const est=jb!=null?Math.round((0.010+0.003+0.010+(rtt||0)/2+jb+out)*1000):null;if(est!=null){const e=est/1000;if(Math.abs(e-latSec)>0.015)latSec=e;else latSec=latSec*0.95+e*0.05;}   // click compensation: re-lock only on a real change, otherwise hold steady
-  $('#lat').textContent=(est!=null?'≈ '+est+' ms end-to-end · ':'')+(jb!=null?'buffer '+Math.round(jb*1000)+' ms':'')+(rtt!=null?' · net '+Math.round(rtt*1000)+' ms':'')+(lost?' · lost '+lost:'');
+  const playout=poN>0?poD/poN:null;                                   // measured: jitter buffer -> media element -> device (direct path)
+  const out=directMode&&playout!=null?playout:(rac.outputLatency||0)+(rac.baseLatency||0);
+  // estimate: capture ≈10 ms + 10 ms Opus frame + half the round trip + jitter buffer + playout path (measured where Chrome reports it)
+  const est=jb!=null?Math.round((0.010+0.010+(rtt||0)/2+jb+out)*1000):null;
+  if(rac.outputLatency>0.06&&!window.__btWarned){window.__btWarned=true;toast('Output latency '+Math.round(rac.outputLatency*1000)+' ms — Bluetooth headphones? Wired ones are ~100 ms faster');}if(est!=null){const e=est/1000;if(Math.abs(e-latSec)>0.015)latSec=e;else latSec=latSec*0.95+e*0.05;}   // click compensation: re-lock only on a real change, otherwise hold steady
+  $('#lat').textContent=(est!=null?'≈ '+est+' ms end-to-end · ':'')+(jb!=null?'buffer '+Math.round(jb*1000)+' ms':'')+(rtt!=null?' · net '+Math.round(rtt*1000)+' ms':'')+' · '+(directMode?'direct':'mix')+(lost?' · lost '+lost:'');
   $('#s1').textContent=codec+(n>1?' × '+(n-1)+'+tb':'')+(kbps?' · '+kbps+' kb/s':'');}catch(e){}},2000);
 renderMeta();sig.run();
 </script></body></html>"""

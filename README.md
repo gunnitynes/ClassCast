@@ -72,13 +72,25 @@ result here.)
    The transport readout shows ▶ tempo · bar.beat while the DAW plays.
 
 ## Latency
-Opus runs in **10 ms frames**; the receiver's **Low lat** setting floors the
-jitter buffer at 20 ms (it rises by itself if the Wi‑Fi gets jittery), **Smooth**
-holds a steady 150 ms so music never warbles. The receiver header shows an
-honest end-to-end estimate (`≈ 60 ms`) built from Chrome's own stats: capture,
-frame, half the round trip, jitter buffer, output latency. Realistic floor on
-Wi‑Fi is 40–60 ms: right for monitoring while producing, not for a drummer
-playing to a click (that needs <15 ms, which a browser cannot do).
+Built for sync and reference, so the chain is as short as a browser allows:
+- Studio sends the **raw device tracks** — no mixer in the send path. Mute is a
+  track switch; the talkback duck is done on the receiver.
+- **10 ms Opus frames** (Chrome's minimum).
+- Receiver **Min** setting: jitter-buffer target 0 → NetEq holds only what the
+  measured network jitter needs (≈10–20 ms on a good LAN; it rises by itself on
+  bad Wi‑Fi). **Smooth** = steady 150 ms for music that must never warble.
+- With one programme channel the receiver plays **directly through the media
+  element** (shortest playout path); the Web Audio mixing path is only used when
+  the cue mixer has 2+ channels.
+- The header estimate (`≈ 55 ms end-to-end · direct`) uses Chrome's own measured
+  jitter-buffer and playout delays. Realistic floor: **~45–60 ms** wired-Wi‑Fi;
+  ~100 ms in Smooth. A drummer playing to a click needs <15 ms — not a browser job.
+
+To get the last milliseconds in the room: teacher's Mac on **Ethernet**, students
+on 5 GHz Wi‑Fi, **wired headphones** (Bluetooth adds 100–200 ms — the receiver
+warns when it sees it), Min mode. To *measure* it for real: play a click from
+the DAW, cable one student's headphone out back into a spare interface input,
+record both against each other and read the offset in the DAW.
 
 ## One studio tab
 The studio runs in exactly one browser tab. If a second one is opened (e.g. the
