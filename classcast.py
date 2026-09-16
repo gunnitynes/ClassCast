@@ -732,6 +732,33 @@ svg.bg{position:fixed;inset:0;width:100%;height:100%;z-index:0;pointer-events:no
 .unmute{position:fixed;inset:0;background:rgba(247,246,242,.9);display:none;place-items:center;z-index:9}.unmute.show{display:grid}
 .unmute button{font:inherit;font-weight:800;letter-spacing:.1em;text-transform:uppercase;border:1.5px solid var(--ink);background:var(--ink);color:#fff;border-radius:14px;padding:20px 40px;cursor:pointer}
 .toast{position:fixed;left:50%;bottom:20px;transform:translateX(-50%) translateY(20px);opacity:0;background:var(--ink);color:#fff;padding:10px 16px;border-radius:12px;transition:.25s;pointer-events:none;font-weight:600;z-index:9}.toast.show{opacity:1;transform:translateX(-50%)}
+.vdot{display:inline-block;width:12px;height:12px;border-radius:50%;border:1.5px solid var(--ink);vertical-align:-2px;margin-right:8px;background:transparent;transition:background .08s,box-shadow .08s}
+.vdot.hit{background:var(--ink)}.vdot.one{background:var(--live);border-color:var(--live);box-shadow:0 0 0 4px rgba(47,158,109,.25)}
+/* ---- visual metronome (fullscreen) */
+.vm{position:fixed;inset:0;z-index:20;background:var(--paper);color:var(--ink);display:flex;flex-direction:column;user-select:none}
+.vmflash{position:absolute;inset:0;background:var(--ink);opacity:0;pointer-events:none}
+.vmtop{position:relative;z-index:2;display:flex;justify-content:space-between;align-items:center;padding:16px 18px}
+.vmseg{display:flex;border:1.5px solid var(--ink);border-radius:12px;overflow:hidden;background:var(--card)}
+.vmseg button{border:0;border-radius:0;padding:10px 16px;font-size:11px;letter-spacing:.14em;background:transparent}.vmseg button+button{border-left:1.5px solid var(--ink)}.vmseg button.on{background:var(--ink);color:#fff}
+.vmx{width:44px;height:44px;border-radius:50%;padding:0;font-size:16px}
+.vmbody{position:relative;z-index:2;flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:4vmin;padding:0 20px 24px}
+.vmwait{font-size:14px;letter-spacing:.14em;text-transform:uppercase;color:var(--ink2)}
+.vmmain{display:flex;flex-direction:column;align-items:center;gap:3vmin}
+.vmbig{width:34vmin;height:34vmin;border-radius:50%;border:2px solid var(--ink);display:grid;place-items:center;background:var(--card);position:relative;transition:background .05s,transform .05s,box-shadow .05s}
+.vmbig span{font-size:16vmin;font-weight:900;line-height:1;letter-spacing:-.04em;color:var(--ink);transition:color .05s}
+.vmbig.hit{background:var(--ink);transform:scale(1.04)}.vmbig.hit span{color:#fff}
+.vmbig.one.hit{background:var(--live);border-color:var(--live);box-shadow:0 0 0 2.5vmin rgba(47,158,109,.22)}
+.vmdots{display:flex;gap:2.2vmin}.vmdots i{width:3.2vmin;height:3.2vmin;border-radius:50%;border:2px solid var(--ink);background:transparent}.vmdots i.on{background:var(--ink)}.vmdots i.one{border-color:var(--live)}.vmdots i.one.on{background:var(--live)}
+.vmbpm{font-size:6vmin;font-weight:700;letter-spacing:.06em}.vmbpm small{font-size:2.4vmin;letter-spacing:.2em;color:var(--ink2);margin-left:1vmin}
+.vmpos{font-size:3vmin;letter-spacing:.14em;color:var(--ink2);text-transform:uppercase}
+.vmpend{width:min(80vw,900px);display:none;flex-direction:column;gap:1.2vmin}
+.vmrail{position:relative;height:2px;background:var(--ink);opacity:.8}.vmrail::before,.vmrail::after{content:'';position:absolute;top:-8px;width:2px;height:18px;background:var(--ink)}.vmrail::before{left:0}.vmrail::after{right:0}
+.vmrail i{position:absolute;top:-9px;width:20px;height:20px;border-radius:50%;background:var(--ink);left:0;transform:translateX(-50%)}
+.vmsub{display:flex;justify-content:space-between}.vmsub i{width:3px;height:10px;background:var(--ink3)}.vmsub i.on{background:var(--ink)}
+.vminfo{display:none;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:1.6vmin 3vmin;width:min(90vw,1000px);font-size:1.9vmin;letter-spacing:.1em;text-transform:uppercase;color:var(--ink2);border-top:1.5px dashed var(--ink3);padding-top:2vmin}
+.vminfo b{display:block;color:var(--ink);font-size:2.8vmin;letter-spacing:0;text-transform:none;margin-top:.3vmin}
+.vm.simple .vmmain,.vm.simple .vmpend,.vm.simple .vminfo{display:none}.vm.simple .vmbody::after{content:attr(data-beat);font-size:22vmin;font-weight:900;color:var(--ink);opacity:.15}
+.vm.complex .vmpend{display:flex}.vm.complex .vminfo{display:grid}.vm.complex .vmbig{width:26vmin;height:26vmin}.vm.complex .vmbig span{font-size:12vmin}
 /* phones: control column becomes a row under the meters */
 @media(max-width:640px){.unit{grid-template-columns:1fr;grid-template-rows:minmax(0,1fr) auto;padding:12px}.ctrl{flex-direction:row;flex-wrap:wrap;justify-content:space-around;gap:10px 14px;padding:0}.plate{display:none}.knob{width:84px;height:84px}.ovl.br,.ovl.tr{display:none}}
 """
@@ -763,7 +790,7 @@ LISTEN_HTML = r"""<!doctype html><html><head><meta charset=utf-8><title>CCAST</t
    <div class=sub2 id=sub>Press the power button to tune in.</div>
   </div>
   <div class=ctrl>
-   <div class=plate>ccast · rx‑1</div>
+   <div class=plate><span class=vdot id=vdot></span>ccast · rx‑1</div>
    <div class=btnlbl>
     <div class=knob id=knob title="Drag up/down or scroll · double-click resets"></div>
     <span class=lbl>volume</span>
@@ -775,6 +802,7 @@ LISTEN_HTML = r"""<!doctype html><html><head><meta charset=utf-8><title>CCAST</t
    <div class=pair>
     <div class=btnlbl><button class="round mute" id=clk title="Click track — follows the DAW transport"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v7"/><path d="M6 21l3-10h6l3 10z"/><path d="M12 10l5-5"/></svg></button><span class=lbl>click</span></div>
     <div class=btnlbl><div class="knob sm" id=clkknob title="Click level"></div><span class=lbl>level</span></div>
+    <div class=btnlbl><button class="round mute" id=vis title="Visual metronome — fullscreen"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="14" rx="2"/><circle cx="12" cy="11" r="3.2" fill="currentColor" stroke="none"/></svg></button><span class=lbl>visual</span></div>
    </div>
    <div class=btnlbl><div class=sw id=snd title="Click sound"><span>stick</span><span>shaker</span></div><span class=lbl>sound</span></div>
    <div class=btnlbl><div class=sw id=seg title="Jitter buffer: steady 150 ms, or the minimum the network allows"><span>smooth</span><span>min</span></div><span class=lbl>buffer</span></div>
@@ -782,6 +810,24 @@ LISTEN_HTML = r"""<!doctype html><html><head><meta charset=utf-8><title>CCAST</t
  </section>
 </main>
 <div class=unmute id=unmute><button id=unmuteBtn>Tap to hear</button></div>
+<div class=vm id=vm hidden>
+ <div class=vmflash id=vmflash></div>
+ <div class=vmtop>
+  <div class=vmseg id=vmseg><button data-m=simple>Simple</button><button data-m=moderate class=on>Moderate</button><button data-m=complex>Complex</button></div>
+  <button class=vmx id=vmx title="Exit (Esc)">✕</button>
+ </div>
+ <div class=vmbody>
+  <div class=vmwait id=vmwait>waiting for the DAW clock…</div>
+  <div class=vmmain id=vmmain>
+   <div class=vmbig id=vmbig><span id=vmbeat>1</span></div>
+   <div class=vmdots id=vmdots></div>
+   <div class="vmbpm mono" id=vmbpm>—</div>
+   <div class="vmpos mono" id=vmpos></div>
+  </div>
+  <div class=vmpend id=vmpend><div class=vmrail><i id=vmbob></i></div><div class=vmsub id=vmsub></div></div>
+  <div class="vminfo mono" id=vminfo></div>
+ </div>
+</div>
 <div id=sinks hidden></div>
 <div class=toast id=toast></div>
 <script>%JS%
@@ -919,6 +965,37 @@ $('#clk').onclick=()=>{clk.on=!clk.on;rac.resume().catch(()=>{});if(clk.on&&clk.
   if(clk.on&&!clk.bpm)toast(dc&&dc.readyState==='open'?'No DAW clock yet — the studio needs MIDI Clock on its IAC input, and the DAW must be playing':'Not connected to the studio’s clock — reload this page');};
 $('#snd').onclick=()=>{clk.sound=clk.sound==='stick'?'shaker':'stick';try{localStorage.cc_snd=clk.sound;}catch(e){}applyClick();};
 makeKnob($('#clkknob'),clk.level,v=>{clk.level=v;try{localStorage.cc_clk=v;}catch(e){}applyClick();},true);applyClick();
+// ---------- visual metronome: same latency-compensated beat grid as the audio click, drawn instead of heard
+const vm={open:false,mode:'moderate',lastN:null};try{vm.mode=localStorage.cc_vis||'moderate';}catch(e){}
+const vmEl=$('#vm');function vmMode(m){vm.mode=m;try{localStorage.cc_vis=m;}catch(e){}vmEl.className='vm '+m;document.querySelectorAll('#vmseg button').forEach(b=>b.classList.toggle('on',b.dataset.m===m));}
+document.querySelectorAll('#vmseg button').forEach(b=>b.onclick=()=>vmMode(b.dataset.m));vmMode(vm.mode);
+function vmOpen(){vm.open=true;vmEl.hidden=false;$('#vis').classList.add('on');if(vmEl.requestFullscreen)vmEl.requestFullscreen().catch(()=>{});}
+function vmClose(){vm.open=false;vmEl.hidden=true;$('#vis').classList.remove('on');if(document.fullscreenElement)document.exitFullscreen().catch(()=>{});}
+$('#vis').onclick=()=>vm.open?vmClose():vmOpen();$('#vmx').onclick=vmClose;
+document.addEventListener('fullscreenchange',()=>{if(!document.fullscreenElement&&vm.open)vmClose();});
+addEventListener('keydown',e=>{if(!vm.open)return;if(e.key==='Escape')vmClose();if(e.key==='1')vmMode('simple');if(e.key==='2')vmMode('moderate');if(e.key==='3')vmMode('complex');});
+function vmDots(el,bpb,active,size){if(el.children.length!==bpb){el.innerHTML='';for(let i=0;i<bpb;i++){const d=document.createElement('i');if(i===0)d.className='one';el.append(d);}}[...el.children].forEach((d,i)=>d.classList.toggle('on',i===active));}
+(function vmLoop(){requestAnimationFrame(vmLoop);
+  const have=clk.line&&clk.running&&clk.offset!=null;const vd=$('#vdot');
+  if(!have){vd.className='vdot';if(vm.open){$('#vmwait').style.display='';$('#vmmain').style.visibility='hidden';$('#vmflash').style.opacity=0;}return;}
+  const b=beatAt(performance.now()-latSec*1000),n=Math.floor(b),ph=b-n,bpb=clk.bpb||4,bib=((n%bpb)+bpb)%bpb,bar=Math.floor(n/bpb)+1;
+  const hit=ph<0.12,one=bib===0;
+  vd.className='vdot'+(hit?(one?' one':' hit'):'');
+  if(!vm.open)return;
+  $('#vmwait').style.display='none';$('#vmmain').style.visibility='';
+  // flash: full-screen in simple mode, subtle otherwise; decays over the first ~20 % of the beat
+  const decay=Math.max(0,1-ph/0.2);$('#vmflash').style.opacity=(vm.mode==='simple'?(one?0.95:0.55):(one?0.10:0.04))*decay;
+  $('#vmflash').style.background=one?'var(--live)':'var(--ink)';$('.vmbody').dataset.beat=bib+1;
+  if(vm.lastN!==n){vm.lastN=n;$('#vmbeat').textContent=bib+1;vmDots($('#vmdots'),bpb,bib);vmDots($('#vmsub'),4,-1);
+    $('#vmbpm').innerHTML=clk.bpm.toFixed(1)+'<small>bpm</small>';$('#vmpos').textContent=`bar ${bar} · ${bpb}/4 · beat ${bib+1}`;}
+  const big=$('#vmbig');big.classList.toggle('hit',hit);big.classList.toggle('one',one);
+  if(vm.mode==='complex'){const dir=n%2===0?1:-1;const x=50+dir*Math.cos(Math.PI*ph)*-50;$('#vmbob').style.left=x+'%';   // pendulum: one swing per beat
+    [...$('#vmsub').children].forEach((d,i)=>d.classList.toggle('on',Math.floor(ph*4)===i));
+    if((performance.now()|0)%500<20||!$('#vminfo').innerHTML){const toBar=bpb-bib;$('#vminfo').innerHTML=
+      `<div>tempo<b>${clk.bpm.toFixed(2)} bpm</b></div><div>position<b>${bar}.${bib+1}</b></div><div>next bar in<b>${toBar} beat${toBar>1?'s':''}</b></div><div>beat length<b>${(60000/clk.bpm).toFixed(1)} ms</b></div>`+
+      `<div>click aligned to<b>+${Math.round(latSec*1000)} ms stream</b></div><div>clock link<b>${clk.bestRtt<1e9?clk.bestRtt.toFixed(1)+' ms rtt':'—'}</b></div><div>stream<b>${$('#st').textContent}</b></div>`+
+      (meta.now?`<div>now playing<b>${meta.now}</b></div>`:'')+`<div>station<b>${meta.station}</b></div><div>buffer<b>${mode==='smooth'?'smooth 150 ms':'min'}</b></div>`;}}
+})();
 // ---------- signalling
 let stemInfo=[];
 sig.onmsg=async(from,d)=>{if(from!=='host')return;

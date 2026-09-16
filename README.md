@@ -60,6 +60,15 @@ it stops when you stop. It is synthesised on their machine and **delayed by the
 measured stream latency**, so it lands on the music they hear, not ahead of it.
 Timing is within ~0.5 ms of the beat grid.
 
+**Visual metronome**: the beat dot on the receiver panel blinks in time; the
+**Visual** button opens a fullscreen metronome (Esc leaves) in three modes —
+**Simple** (whole screen flashes, downbeat green), **Moderate** (big beat
+circle, beat dots, tempo, bar.beat), **Complex** (adds a pendulum, 16th
+subdivisions, and a readout of tempo, position, next bar, beat length, click
+alignment, clock link, stream state, now playing). Keys 1/2/3 switch modes.
+Same phase-locked, latency-compensated grid as the audio click, works with the
+click on or off.
+
 Sync source is **MIDI Clock over the IAC bus** read by the studio page (Web MIDI)
 — no installs, works with Live and Pro Tools alike. (Ableton Link needs a native
 library, which a browser + stdlib Python cannot host; MIDI clock gives the same
