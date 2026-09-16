@@ -80,6 +80,11 @@ frame, half the round trip, jitter buffer, output latency. Realistic floor on
 Wi‑Fi is 40–60 ms: right for monitoring while producing, not for a drummer
 playing to a click (that needs <15 ms, which a browser cannot do).
 
+## One studio tab
+The studio runs in exactly one browser tab. If a second one is opened (e.g. the
+app relaunched and opened a fresh tab), the older tab steps down and says so —
+close it. Students always talk to the newest studio tab.
+
 ## If someone cannot connect
 - Is the server running? Click the Dock icon: "CCAST is running" = yes.
 - Same Wi-Fi as this Mac; type `http://` if entering the address by hand.

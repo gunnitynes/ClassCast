@@ -36,6 +36,7 @@ _boxes = {}             # id -> list of (seq, message)
 _seq = {}               # id -> last seq assigned
 _seen = {}              # id -> last poll time
 _names = {}             # id -> display name (for the terminal log)
+_host_hid = None        # the one studio page allowed to act as host (the most recently opened)
 
 
 def _touch(cid):
@@ -250,14 +251,15 @@ JS_COMMON = r"""
 const $=s=>document.querySelector(s);const sleep=ms=>new Promise(r=>setTimeout(r,ms));
 const rnd=()=>Math.random().toString(36).slice(2,10);
 class Signal{
-  constructor(id){this.id=id;this.q=Promise.resolve();this.after=0;this.gen=null;this.online=null;
-    this.onmsg=async()=>{};this.onreset=()=>{};this.onoffline=()=>{};}
+  constructor(id,extra){this.id=id;this.extra=extra||'';this.q=Promise.resolve();this.after=0;this.gen=null;this.online=null;this.dead=false;
+    this.onmsg=async()=>{};this.onreset=()=>{};this.onoffline=()=>{};this.onstale=()=>{};}
   send(to,data){this.q=this.q.then(()=>this._post({from:this.id,to,data})).catch(()=>{});return this.q;}
   async _post(body){for(let i=0;i<4;i++){try{const r=await fetch('/api/msg',{method:'POST',body:JSON.stringify(body)});if(r.ok)return;}catch(e){}await sleep(250*(i+1));}}
-  async run(){for(;;){try{
+  async run(){for(;;){if(this.dead)return;try{
     const ctl=new AbortController();const t=setTimeout(()=>ctl.abort(),40000);
-    const r=await fetch(`/api/poll?id=${this.id}&after=${this.after}`,{signal:ctl.signal,cache:'no-store'});clearTimeout(t);
-    if(!r.ok)throw new Error(r.status);const {gen,msgs}=await r.json();
+    const r=await fetch(`/api/poll?id=${this.id}&after=${this.after}${this.extra}`,{signal:ctl.signal,cache:'no-store'});clearTimeout(t);
+    if(!r.ok)throw new Error(r.status);const {gen,msgs,stale}=await r.json();
+    if(stale){this.dead=true;this.onstale();return;}
     const restarted=this.gen!==null&&gen!==this.gen;const backOnline=this.online===false;
     this.gen=gen;this.online=true;if(restarted)this.after=0;
     if(restarted||backOnline)this.onreset();
@@ -453,7 +455,7 @@ HOST_HTML = r"""<!doctype html><html><head><meta charset=utf-8><title>CCAST · S
 <script>%JS%
 const peers=new Map();           // id -> {pc,cid,pending:[],senders:{stemId:RTCRtpSender}}
 const HID=rnd();                 // this host page instance; students ignore host-ready from a host they're already connected to
-const sig=new Signal('host');
+const sig=new Signal('host','&hid='+HID);
 let live=false,muted=false,talking=false,hasSignal=false,t0=0,micStream=null,micSrc=null,devices=[];
 const meta={station:'CCAST',now:''};try{Object.assign(meta,JSON.parse(localStorage.cc_meta||'{}'));}catch(e){}
 if(/classcast radio/i.test(meta.station))meta.station='CCAST';
@@ -617,7 +619,7 @@ function makePeer(id){const old=peers.get(id);if(old)old.pc.close();
   // data channel: clock timeline + clock-offset pings (unordered, no retransmits: newest wins)
   const dc=pc.createDataChannel('clock',{ordered:false,maxRetransmits:0});p.dc=dc;
   dc.onopen=()=>{try{dc.send(clockMsg());}catch(e){}};
-  dc.onmessage=e=>{try{const m=JSON.parse(e.data);if(m.type==='ping')dc.send(JSON.stringify({type:'pong',t1:m.t1,t2:performance.now()}));}catch(err){}};
+  dc.onmessage=e=>{try{const m=JSON.parse(e.data);if(m.type==='ping')dc.send(JSON.stringify({type:'pong',t1:m.t1,t2:performance.now()}));else if(m.type==='clock?')dc.send(clockMsg());}catch(err){}};
   pc.onicecandidate=e=>{if(e.candidate)sig.send(id,{type:'ice',cid:p.cid,c:e.candidate});};
   pc.onconnectionstatechange=()=>{render();const s=pc.connectionState;
     if(s==='failed'||s==='closed'){if(peers.get(id)===p)dropPeer(id);}
@@ -655,7 +657,10 @@ function stopAll(){live=false;muted=false;talking=false;applyGains();
 $('#stop').onclick=stopAll;
 addEventListener('pagehide',()=>{navigator.sendBeacon('/api/msg',JSON.stringify({from:'host',to:'*',data:{type:'host-stopped'}}));});
 if(!['localhost','127.0.0.1'].includes(location.hostname))showErr('Open this page as http://localhost:'+location.port+'/host — browsers only allow audio capture on localhost.');
-setOnAir();renderStrips();fetch('/api/reset?id=host').then(()=>{sig.send('*',{type:'host-ready',hid:HID});sig.run();});
+sig.onstale=()=>{   // a newer studio tab was opened: this one steps down so students never talk to two studios
+  for(const [,p] of peers)p.pc.close();peers.clear();live=false;applyGains();
+  document.body.innerHTML='<div class=wrap style="text-align:center;padding-top:20vh"><div class=station style="justify-content:center;margin-bottom:18px"><span class=logo>'+ICON_WAVE+'</span><span class=stname>CCAST</span></div><p style="color:var(--ink2)">A newer studio tab has taken over. Close this one — the studio only ever runs in one tab.</p></div>';};
+setOnAir();renderStrips();fetch('/api/reset?id=host&hid='+HID).then(()=>{sig.send('*',{type:'host-ready',hid:HID});sig.run();});
 </script></body></html>"""
 
 LISTEN_CSS = r"""
@@ -888,12 +893,13 @@ function onClockMsg(m){if(m.seq<=clk.seq)return;clk.seq=m.seq;const wasRunning=c
 let dc=null;function wireDC(ch){dc=ch;ch.onmessage=e=>{try{const m=JSON.parse(e.data);
     if(m.type==='pong'){const t3=performance.now(),rtt=t3-m.t1,off=m.t2-(m.t1+t3)/2;if(rtt<=clk.bestRtt*1.5||clk.offset==null){clk.offset=clk.offset==null?off:clk.offset*0.7+off*0.3;}clk.bestRtt=Math.min(clk.bestRtt*1.02,rtt);}
     else if(m.type==='clock')onClockMsg(m);}catch(err){}};
-  const ping=()=>{if(ch.readyState==='open')try{ch.send(JSON.stringify({type:'ping',t1:performance.now()}));}catch(e){}};ch.onopen=()=>{ping();};setTimeout(ping,300);ch._pinger=setInterval(ping,1000);ch.onclose=()=>clearInterval(ch._pinger);}
+  const ping=()=>{if(ch.readyState==='open')try{ch.send(JSON.stringify({type:'ping',t1:performance.now()}));if(!clk.bpm)ch.send(JSON.stringify({type:'clock?'}));}catch(e){}};ch.onopen=()=>{ping();};setTimeout(ping,300);ch._pinger=setInterval(ping,1000);ch.onclose=()=>clearInterval(ch._pinger);}
 function renderClock(){const el=$('#tc');if(!clk.bpm){el.innerHTML='';return;}
   let dots='';for(let i=0;i<clk.bpb;i++)dots+=`<i class="${i===0?'one':''}"></i>`;el.innerHTML=`<span>${clk.running?'▶':'■'} ${clk.bpm.toFixed(1)}</span>${dots}`;}
 setInterval(()=>{if(!clk.line||!clk.running||clk.offset==null)return;const b=Math.floor(beatAt(performance.now()-latSec*1000));const i=((b%clk.bpb)+clk.bpb)%clk.bpb;[...$('#tc').querySelectorAll('i')].forEach((d,k)=>d.classList.toggle('on',k===i));},50);
 function applyClick(){ramp(clickGain,clk.on?clk.level*clk.level*0.9:0,30);$('#clk').classList.toggle('on',clk.on);$('#snd').classList.toggle('fast',clk.sound==='shaker');if(!clk.on)killClicks();}
-$('#clk').onclick=()=>{clk.on=!clk.on;rac.resume().catch(()=>{});if(clk.on&&clk.line)clk.lastBeat=Math.floor(beatAt(performance.now()-latSec*1000));applyClick();if(clk.on&&!clk.bpm)toast('No DAW clock yet — the studio needs MIDI Clock on its IAC input');};
+$('#clk').onclick=()=>{clk.on=!clk.on;rac.resume().catch(()=>{});if(clk.on&&clk.line)clk.lastBeat=Math.floor(beatAt(performance.now()-latSec*1000));applyClick();
+  if(clk.on&&!clk.bpm)toast(dc&&dc.readyState==='open'?'No DAW clock yet — the studio needs MIDI Clock on its IAC input, and the DAW must be playing':'Not connected to the studio’s clock — reload this page');};
 $('#snd').onclick=()=>{clk.sound=clk.sound==='stick'?'shaker':'stick';try{localStorage.cc_snd=clk.sound;}catch(e){}applyClick();};
 makeKnob($('#clkknob'),clk.level,v=>{clk.level=v;try{localStorage.cc_clk=v;}catch(e){}applyClick();},true);applyClick();
 // ---------- signalling
@@ -983,6 +989,7 @@ class H(BaseHTTPRequestHandler):
             pass   # client went away; queued messages stay until acknowledged
 
     def do_GET(self):
+        global _host_hid
         u = urlparse(self.path); q = parse_qs(u.query)
         if u.path == "/":
             return self._send(200, LISTEN_HTML, "text/html")
@@ -996,10 +1003,16 @@ class H(BaseHTTPRequestHandler):
             cid = q.get("id", [""])[0]
             if not cid:
                 return self._send(400, "{}")
+            if cid == "host" and q.get("hid", [""])[0] != _host_hid:
+                return self._send(200, json.dumps({"gen": GEN, "msgs": [], "stale": True}))   # an older studio tab
             after = int(q.get("after", ["0"])[0] or 0)
             return self._send(200, json.dumps({"gen": GEN, "msgs": take(cid, after, POLL_WAIT)}))
         if u.path == "/api/reset":
-            reset(q.get("id", ["host"])[0]); return self._send(200, "{}")
+            cid = q.get("id", ["host"])[0]
+            if cid == "host":
+                _host_hid = q.get("hid", [""])[0]
+                log("studio page opened" + (" (older tabs superseded)" if _host_hid else ""))
+            reset(cid); return self._send(200, "{}")
         if u.path == "/api/quit" and self.client_address[0] in ("127.0.0.1", "::1"):
             log("quit from host page"); self._send(200, "{}")
             threading.Thread(target=shutdown, daemon=True).start(); return
