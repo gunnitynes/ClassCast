@@ -9,7 +9,7 @@ stereo, 48 kHz, Opus 320 kb/s, no speech processing, ~100 ms.
    the studio page. (First time: macOS may ask to allow Python to accept
    incoming connections → Allow; Chrome asks for the microphone once → Allow —
    that is how it reads your interface.)
-2. **Programme input**: pick the device carrying your mix. Meters run at once —
+2. **Channels**: pick the device carrying your mix (add more for a cue system, see below). Meters run at once —
    peak dBFS, clip latch, "Signal present" — before anyone hears anything.
    The line under the picker says exactly what Chrome is grabbing:
    `channels 1–2 · stereo · 48 kHz · processing off`.
@@ -34,20 +34,33 @@ student actually hears (two traces, envelope, scope readouts), Listen/Mute,
 volume, and **Smooth** (steady 150 ms buffer — default) / **Low latency**
 (~50 ms). It reconnects by itself after anything.
 
-## Getting your mix onto channels 1–2
-Chrome captures **only channels 1–2** of the device you pick. Three ways:
+## Channels — a cue system
+The studio can send up to **six stereo channels + talkback**. With one channel
+it is the normal stream. With more, every student gets a **cue mixer** on the
+receiver: a knob, mute and solo per channel, their own mix in their headphones.
+Channels a student mutes are switched off at the source, so Wi‑Fi bandwidth
+stays low (each active channel is 320 kb/s).
 
-**A · Pro Tools Audio Bridge 2‑A** (virtual, already installed — no cables,
-independent stream mix). Audio MIDI Setup → + → Create Aggregate Device: tick
-Universal Audio Thunderbolt (clock) and Pro Tools Audio Bridge 2‑A. DAW audio
-device = the aggregate; master to the Apollo as usual; a send / cue / second
-master to the Bridge's two extra outputs. Pick "Pro Tools Audio Bridge 2‑A" here.
+Chrome captures **only channels 1–2 of each device** — but it can open several
+devices at once. This Mac has six virtual stereo devices installed with Pro Tools
+(Audio Bridge 2‑A, 2‑B, 6, 16, 32, 64):
+1. Audio MIDI Setup → **+** → Create Aggregate Device: tick your interface
+   (clock source) and the Audio Bridges you want.
+2. DAW audio device = the aggregate. Master to the interface as usual; route
+   sends/stems (drums, vocal, click, reference…) to the Bridges' outputs.
+3. In the studio, **+ Channel** for each, name it, pick its Bridge.
 
-**B · Physical loopback on the Apollo.** Mix or cue → spare line-out pair →
-cable → Mic/Line 1–2 at Line, unity. Pick "Universal Audio Thunderbolt".
+Other ways onto channels 1–2: a physical loopback (spare line-out → inputs
+1–2), or an interface's Loopback feature (Scarlett, EVO, MOTU, RME).
 
-**C · Interfaces with Loopback** (Scarlett, EVO, MOTU, RME): enable Loopback
-onto inputs 1–2 in the control app, pick the interface.
+## Latency
+Opus runs in **10 ms frames**; the receiver's **Low lat** setting floors the
+jitter buffer at 20 ms (it rises by itself if the Wi‑Fi gets jittery), **Smooth**
+holds a steady 150 ms so music never warbles. The receiver header shows an
+honest end-to-end estimate (`≈ 60 ms`) built from Chrome's own stats: capture,
+frame, half the round trip, jitter buffer, output latency. Realistic floor on
+Wi‑Fi is 40–60 ms: right for monitoring while producing, not for a drummer
+playing to a click (that needs <15 ms, which a browser cannot do).
 
 ## If someone cannot connect
 - Is the server running? Click the Dock icon: "CCAST is running" = yes.

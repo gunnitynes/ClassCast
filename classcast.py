@@ -265,10 +265,10 @@ class Signal{
   }catch(e){if(this.online!==false){this.online=false;this.onoffline();}await sleep(1500);}}}
 }
 // Opus tuned for music: full-band stereo, 320 kb/s, no DTX, in-band FEC for the odd lost packet.
-const OPUS='stereo=1;sprop-stereo=1;maxaveragebitrate=320000;maxplaybackrate=48000;sprop-maxcapturerate=48000;cbr=0;usedtx=0;useinbandfec=1';
+const OPUS='stereo=1;sprop-stereo=1;maxaveragebitrate=320000;maxplaybackrate=48000;sprop-maxcapturerate=48000;cbr=0;usedtx=0;useinbandfec=1;ptime=10;minptime=10';
 function stereo(sdp){const m=sdp.match(/a=rtpmap:(\d+) opus\/48000/i);if(!m)return sdp;const pt=m[1];
-  const re=new RegExp('^a=fmtp:'+pt+' (.*)$','m');
-  if(re.test(sdp))return sdp.replace(re,(l,params)=>'a=fmtp:'+pt+' '+params.split(';').filter(kv=>!/^(stereo|sprop-stereo|maxaveragebitrate|maxplaybackrate|sprop-maxcapturerate|cbr|usedtx|useinbandfec)=/.test(kv.trim())).concat(OPUS.split(';')).join(';'));
+  const re=new RegExp('^a=fmtp:'+pt+' (.*)$','gm');                 // every m-section (one per channel)
+  if(re.test(sdp))return sdp.replace(re,(l,params)=>'a=fmtp:'+pt+' '+params.split(';').filter(kv=>!/^(stereo|sprop-stereo|maxaveragebitrate|maxplaybackrate|sprop-maxcapturerate|cbr|usedtx|useinbandfec|ptime|minptime)=/.test(kv.trim())).concat(OPUS.split(';')).join(';'));
   return sdp.replace(new RegExp('(a=rtpmap:'+pt+' opus\\/48000[^\\r\\n]*\\r?\\n)'),'$1a=fmtp:'+pt+' '+OPUS+'\r\n');}
 // Stereo meter with peak hold. Returns a stop() function.
 function meter(stream,els){
@@ -325,6 +325,14 @@ select{background-image:linear-gradient(45deg,transparent 50%,var(--ink) 50%),li
 .alt{color:var(--ink2);font-size:13px}.alt code{color:var(--ink)}
 .qr{background:#fff;padding:12px;border-radius:14px;line-height:0;border:1.5px solid var(--ink);justify-self:end}
 .qr img,.qr canvas{display:block;width:230px;height:230px}
+/* channels */
+.chhead{display:flex;align-items:center;gap:10px;margin-bottom:8px}.chhead label{flex:1}
+.strip{display:grid;grid-template-columns:22px 150px minmax(0,1fr) 90px 40px;gap:10px;align-items:center;padding:6px 0;border-top:1.5px dashed var(--ink3)}
+.strip:first-child{border-top:0}.strip .num{color:var(--ink2);font-size:12px;text-align:center}
+.strip input.name{padding:9px 10px;font-weight:700;letter-spacing:.04em}.strip select{padding:9px 32px 9px 10px;font-size:13px}
+.strip .mini{height:8px;border:1.5px solid var(--ink);border-radius:4px;overflow:hidden;background:var(--paper)}.strip .mini i{display:block;height:100%;width:0;background:linear-gradient(90deg,var(--ink2),var(--ink));transition:width .05s}
+.strip .x{padding:7px 10px;font-size:14px}
+@media(max-width:640px){.strip{grid-template-columns:22px 1fr 40px}.strip select{grid-column:2/3}.strip .mini{grid-column:2/3}}
 /* input + metering */
 .srcrow{display:flex;gap:10px;align-items:flex-end}.srcrow .grow{flex:1;min-width:0}
 .devinfo{color:var(--ink2);font-size:13px;margin-top:10px;min-height:20px}.devinfo b{color:var(--ink)}
@@ -375,13 +383,13 @@ HOST_HTML = r"""<!doctype html><html><head><meta charset=utf-8><title>CCAST · S
 <header class=stationbar>
  <div class=station>
   <span class=logo>%ICON%</span>
-  <div><div class=stname id=stname title="Click to rename">CCAST</div><div class=sttag id=sttag>studio · ch 1</div></div>
+  <div><div class=stname id=stname title="Click to rename">CCAST</div><div class=sttag id=sttag>studio</div></div>
  </div>
  <div class="row controls">
-  <div class=onair id=onair><span>ON AIR</span></div>
+  <div class=onair id=onair><span>OFF AIR</span></div>
   <span class="pill count"><b id=n>0</b> listening</span>
   <button class="ghost icon" id=proj title="Only the address and QR, huge — for the projector">⛶ Projector</button>
-  <button class="ghost icon" id=quit title="Stop streaming and quit ClassCast">Quit</button>
+  <button class="ghost icon" id=quit title="Stop streaming and quit CCAST">Quit</button>
  </div>
 </header>
 
@@ -398,18 +406,16 @@ HOST_HTML = r"""<!doctype html><html><head><meta charset=utf-8><title>CCAST · S
 </section>
 
 <section class=card id=studio>
- <div class=srcrow>
-  <div class=grow><label>Programme input</label><select id=dev></select></div>
-  <button class="ghost icon" id=rescan title="Rescan audio devices">⟳</button>
- </div>
- <div class=devinfo id=devinfo>Choose the device that carries your mix. Chrome captures its <b>channels 1–2</b>.</div>
+ <div class=chhead><label style="margin:0">Channels · each is the first stereo pair of a device</label><button class="ghost icon" id=addch>+ Channel</button><button class="ghost icon" id=rescan title="Rescan audio devices">⟳</button></div>
+ <div id=strips></div>
+ <div class=hint id=chhint>One channel = the normal stream. Add more and every student gets their own cue mix: knobs, mute and solo per channel. Six virtual stereo devices come with this Mac (Pro Tools Audio Bridge 2‑A, 2‑B, 6, 16, 32, 64) — combine them with your interface in an Aggregate Device and route DAW sends to them.</div>
 
  <div class=vu>
   <div class=bezel><canvas id=scope></canvas></div>
   <div class=scale id=scale></div>
   <div class=ch><span class=lbl>L</span><div class="bar pro" id=mL><i></i><b></b></div><span class="peak mono" id=pL>−∞</span></div>
   <div class=ch><span class=lbl>R</span><div class="bar pro" id=mR><i></i><b></b></div><span class="peak mono" id=pR>−∞</span></div>
-  <div class=vufoot><span id=sig class=hint style="margin:0">No signal</span><span class=hint id=acwarn style="margin:0;color:var(--wait);display:none">Click anywhere to start the audio engine</span><button class="clip" id=clip title="Peak ≥ −0.1 dBFS — click to reset">CLIP</button></div>
+  <div class=vufoot><span id=sig class=hint style="margin:0">No signal</span><span class=hint id=acwarn style="margin:0;color:var(--warn);display:none">Click anywhere to start the audio engine</span><button class="clip" id=clip title="Peak ≥ −0.1 dBFS — click to reset">CLIP</button></div>
  </div>
 
  <div id=idle>
@@ -417,7 +423,7 @@ HOST_HTML = r"""<!doctype html><html><head><meta charset=utf-8><title>CCAST · S
  </div>
  <div id=live hidden>
   <div class=desk>
-   <button class="deskbtn talk" id=talk><span class=k>🎙</span><span>Talkback</span><small>hold to talk · click to latch</small></button>
+   <button class="deskbtn talk" id=talk><span class=k>🎙</span><span>Talkback</span><small>hold to talk · click to latch · key T</small></button>
    <button class="deskbtn mute" id=mute><span class=k>M</span><span>Mute</span><small>programme off, students stay</small></button>
    <button class="deskbtn stop" id=stop><span class=k>■</span><span>Stop</span><small>go off air</small></button>
   </div>
@@ -428,35 +434,43 @@ HOST_HTML = r"""<!doctype html><html><head><meta charset=utf-8><title>CCAST · S
  <div class=programme>
   <label>Now playing · shown on every receiver</label>
   <div class=row><input type=text id=now class=grow maxlength=90 placeholder="e.g. Sidechain compression demo · or a reference: Burial — Archangel"><button id=sendnow>Update</button><button class=ghost id=clearnow title="Clear">×</button></div>
-
  </div>
-
 </section>
 </div>
 <div class=toast id=toast></div>
 <script src="/qrcode.min.js"></script>
 <script>%JS%
-const peers=new Map();           // id -> {pc,cid,pending:[]}
+const peers=new Map();           // id -> {pc,cid,pending:[],senders:{stemId:RTCRtpSender}}
 const HID=rnd();                 // this host page instance; students ignore host-ready from a host they're already connected to
 const sig=new Signal('host');
-let program=null,micStream=null,live=false,muted=false,talking=false,stopMeter=null,hasSignal=false,t0=0;
+let live=false,muted=false,talking=false,hasSignal=false,t0=0,micStream=null,micSrc=null,devices=[];
 const meta={station:'CCAST',now:''};try{Object.assign(meta,JSON.parse(localStorage.cc_meta||'{}'));}catch(e){}
-if(/classcast radio/i.test(meta.station))meta.station='CCAST';   // migrate the old default
-// ---------- the desk: a tiny Web Audio mixer. programme -> gain, mic -> gain, both -> one stereo track that is what students receive.
+if(/classcast radio/i.test(meta.station))meta.station='CCAST';
+// ---------- the desk: one Web Audio graph.
+//   channel i:  device -> g_i (duck / mute) -> dest_i  => its own Opus track
+//   talkback:   mic -> micGain -> tbDest                 => its own track, never ducked
+//   everything also sums into `monitor` for the studio scope and meters (not sent).
 const AC=window.AudioContext||window.webkitAudioContext;const ac=new AC({sampleRate:48000,latencyHint:'interactive'});
-const progGain=ac.createGain(),micGain=ac.createGain(),dest=ac.createMediaStreamDestination();
-progGain.connect(dest);micGain.connect(dest);micGain.gain.value=0;
-const outTrack=dest.stream.getAudioTracks()[0];try{outTrack.contentHint='music';}catch(e){}
-let progSrc=null,micSrc=null;
+const monitor=ac.createGain();const dest=ac.createMediaStreamDestination();monitor.connect(dest);
+const micGain=ac.createGain();micGain.gain.value=0;const tbDest=ac.createMediaStreamDestination();micGain.connect(tbDest);micGain.connect(monitor);
+const tbTrack=tbDest.stream.getAudioTracks()[0];try{tbTrack.contentHint='speech';}catch(e){}
+const MAXCH=6;let stems=[];                   // [{id,name,deviceId,stream,src,g,dest,track,an}]
+try{const saved=JSON.parse(localStorage.cc_stems||'[]');saved.slice(0,MAXCH).forEach(s=>addStem(s.name,s.deviceId,false));}catch(e){}
+if(!stems.length)addStem('Mix','',false);
+function addStem(name,deviceId,persist=true){const g=ac.createGain(),d=ac.createMediaStreamDestination(),an=ac.createAnalyser();an.fftSize=512;g.connect(d);g.connect(monitor);g.connect(an);
+  const track=d.stream.getAudioTracks()[0];try{track.contentHint='music';}catch(e){}
+  const s={id:'c'+rnd(),name:name||('Ch '+(stems.length+1)),deviceId:deviceId||'',stream:null,src:null,g,dest:d,track,an};stems.push(s);if(persist)saveStems();return s;}
+function removeStem(s){if(stems.length<=1)return;if(s.src)s.src.disconnect();if(s.stream)s.stream.getTracks().forEach(t=>t.stop());s.g.disconnect();stems=stems.filter(x=>x!==s);saveStems();renderStrips();if(live)renegotiateAll();updateGo();}
+function saveStems(){try{localStorage.cc_stems=JSON.stringify(stems.map(s=>({name:s.name,deviceId:s.deviceId})));}catch(e){}}
 function ramp(g,v,ms){const t=ac.currentTime;g.gain.cancelScheduledValues(t);g.gain.setValueAtTime(g.gain.value,t);g.gain.linearRampToValueAtTime(v,t+ms/1000);}
-function applyGains(){ramp(progGain,muted?0:(talking?0.25:1),60);ramp(micGain,talking?1:0,40);}
+function applyGains(){for(const s of stems)ramp(s.g,muted?0:(talking?0.25:1),60);ramp(micGain,talking?1:0,40);}
 function engine(){if(ac.state!=='running')ac.resume().catch(()=>{});$('#acwarn').style.display=ac.state==='running'?'none':'';}
 ['pointerdown','keydown'].forEach(ev=>addEventListener(ev,engine,{capture:true}));ac.onstatechange=engine;
 // ---------- address / QR / station
 function fitUrl(){const el=$('#url');const chars=(el.textContent||'').length||24;el.style.fontSize='10px';const w=el.clientWidth||600;el.style.fontSize=Math.max(22,Math.min(150,w/(chars*0.61)))+'px';}
 addEventListener('resize',fitUrl);
 fetch('/api/info').then(r=>r.json()).then(i=>{
-  const u=new URL(i.url);$('#url').innerHTML=`<span style="color:var(--dim)">http://</span><b>${u.hostname}</b><span style="color:var(--dim)">:${u.port}</span>`;
+  const u=new URL(i.url);$('#url').innerHTML=`<span style="color:var(--ink2)">http://</span><b>${u.hostname}</b><span style="color:var(--ink2)">:${u.port}</span>`;
   $('#url').dataset.url=i.url;fitUrl();
   if(window.QRCode)new QRCode($('#qr'),{text:i.url,width:480,height:480,correctLevel:QRCode.CorrectLevel.M});
   if(i.alts.length)$('#alts').innerHTML='Also: '+i.alts.map(a=>`<code>http://${a}:${i.port}</code>`).join(' · ');
@@ -467,29 +481,75 @@ $('#copy').onclick=async()=>{try{await navigator.clipboard.writeText($('#url').d
 $('#proj').onclick=()=>{document.body.classList.toggle('projector');setTimeout(fitUrl,30);};
 addEventListener('keydown',e=>{if(e.key==='Escape'){document.body.classList.remove('projector');setTimeout(fitUrl,30);}});
 $('#quit').onclick=async()=>{if(!confirm('Quit CCAST? Students will be disconnected.'))return;stopAll();await fetch('/api/quit').catch(()=>{});
-  document.body.innerHTML='<div class=wrap style="text-align:center;padding-top:20vh"><div class=brand style="justify-content:center;margin-bottom:18px"><span class=logo>'+ICON_WAVE+'</span>CCAST</div><p style="color:var(--dim)">CCAST has quit. You can close this tab.</p></div>';};
+  document.body.innerHTML='<div class=wrap style="text-align:center;padding-top:20vh"><div class=station style="justify-content:center;margin-bottom:18px"><span class=logo>'+ICON_WAVE+'</span><span class=stname>CCAST</span></div><p style="color:var(--ink2)">CCAST has quit. You can close this tab.</p></div>';};
 function saveMeta(){try{localStorage.cc_meta=JSON.stringify(meta);}catch(e){}}
 function renderMeta(){$('#stname').textContent=meta.station;$('#now').value=meta.now;document.title=meta.station+' · Studio';}
 function broadcastMeta(to){sig.send(to||'*',{type:'meta',station:meta.station,now:meta.now,live,muted,talking});}
-$('#stname').onclick=()=>{const v=prompt('Station name',meta.station);if(v&&v.trim()){meta.station=v.trim().slice(0,40);saveMeta();renderMeta();broadcastMeta();}};
+$('#stname').onclick=()=>{const v=prompt('Name',meta.station);if(v&&v.trim()){meta.station=v.trim().slice(0,40);saveMeta();renderMeta();broadcastMeta();}};
 $('#sendnow').onclick=()=>{meta.now=$('#now').value.trim();saveMeta();broadcastMeta();toast(meta.now?'Receivers updated':'Cleared');};
-$('#now').onkeydown=e=>{if(e.key==='Enter')$('#sendnow').click();};
-$('#clearnow').onclick=()=>{$('#now').value='';$('#sendnow').click();};
+$('#now').onkeydown=e=>{if(e.key==='Enter')$('#sendnow').click();};$('#clearnow').onclick=()=>{$('#now').value='';$('#sendnow').click();};
 renderMeta();
-// ---------- metering (dBFS, RMS bar + peak-hold marker + numeric peak + clip latch) on the mix bus
+// ---------- channel strips
+function renderStrips(){const box=$('#strips');box.innerHTML='';stems.forEach((s,i)=>{const el=document.createElement('div');el.className='strip';el.innerHTML=`
+  <span class="num mono">${i+1}</span>
+  <input type=text class=name value="${s.name.replace(/"/g,'&quot;')}" maxlength=14 title="Channel name, shown to students">
+  <select class=dev></select>
+  <div class="mini"><i></i></div>
+  <button class="ghost icon x" title="Remove channel" ${stems.length<=1?'disabled':''}>×</button>`;
+  const sel=el.querySelector('select');fillSelect(sel,s.deviceId,/bridge|loopback|blackhole|aggregate/i);
+  el.querySelector('.name').onchange=e=>{s.name=e.target.value.trim()||('Ch '+(i+1));saveStems();if(live)announceStems();};
+  sel.onchange=()=>{s.deviceId=sel.value;saveStems();arm(s);};
+  el.querySelector('.x').onclick=()=>removeStem(s);
+  s.miniEl=el.querySelector('.mini i');box.append(el);});
+  $('#addch').disabled=stems.length>=MAXCH;$('#chhint').style.display=stems.length>1?'none':'';}
+function fillSelect(sel,cur,prefer){sel.innerHTML='';for(const d of devices){const o=document.createElement('option');o.value=d.deviceId;o.textContent=d.label||('Input '+d.deviceId.slice(0,6));sel.append(o);}
+  if(cur&&[...sel.options].some(o=>o.value===cur))sel.value=cur;else{const p=[...sel.options].find(o=>prefer.test(o.textContent));if(p)sel.value=p.value;}}
+$('#addch').onclick=()=>{if(stems.length>=MAXCH)return;const s=addStem('Ch '+(stems.length+1),'');renderStrips();
+  // pick the first device no other channel uses
+  const used=new Set(stems.map(x=>x.deviceId));const free=devices.find(d=>!used.has(d.deviceId));if(free){s.deviceId=free.deviceId;saveStems();renderStrips();}arm(s);if(live)renegotiateAll();};
+async function listDevices(){devices=(await navigator.mediaDevices.enumerateDevices()).filter(d=>d.kind==='audioinput');renderStrips();
+  const cur=$('#mic').value||localStorage.cc_mic||'';fillSelect($('#mic'),cur,/macbook|built-in|microphone|mic/i);return devices.length;}
+function describe(tr){const st=tr.getSettings();const ch=st.channelCount;const proc=(st.echoCancellation||st.noiseSuppression||st.autoGainControl);
+  return `${tr.label} · ch 1–2 · ${ch===2?'stereo':ch===1?'<b style="color:var(--warn)">mono</b>':ch+' ch'}`+(st.sampleRate?` · ${(st.sampleRate/1000).toFixed(1).replace('.0','')} kHz`:'')+(proc?' · <b style="color:var(--off)">processing ON</b>':'');}
+async function arm(s){if(!s.deviceId){return;}showErr('');
+  try{const st=await navigator.mediaDevices.getUserMedia({audio:{deviceId:{exact:s.deviceId},channelCount:{ideal:2},sampleRate:{ideal:48000},echoCancellation:false,noiseSuppression:false,autoGainControl:false,latency:0.005}});
+    const tr=st.getAudioTracks()[0];try{tr.contentHint='music';}catch(e){}
+    tr.onended=()=>{if(s.stream===st){showErr(`Channel "${s.name}": the input device went away.`);disarm(s);}};
+    const old=s.stream;s.stream=st;if(s.src)s.src.disconnect();s.src=ac.createMediaStreamSource(st);s.src.connect(s.g);
+    if(old&&old!==st)old.getTracks().forEach(t=>t.stop());engine();updateGo();srcLine();}
+  catch(e){showErr(`Channel "${s.name}": could not open that input — ${e.message}`);disarm(s);}}
+function disarm(s){if(s.src)s.src.disconnect();s.src=null;if(s.stream)s.stream.getTracks().forEach(t=>t.stop());s.stream=null;updateGo();}
+function armAll(){stems.forEach(s=>{if(!s.stream)arm(s);});}
+async function openMic(){const id=$('#mic').value;if(!id)return false;
+  try{const s=await navigator.mediaDevices.getUserMedia({audio:{deviceId:{exact:id},channelCount:{ideal:1},echoCancellation:true,noiseSuppression:true,autoGainControl:true}});
+    if(micStream)micStream.getTracks().forEach(t=>t.stop());if(micSrc)micSrc.disconnect();micStream=s;micSrc=ac.createMediaStreamSource(s);micSrc.connect(micGain);try{localStorage.cc_mic=id;}catch(e){}return true;}
+  catch(e){showErr('Could not open the talkback mic: '+e.message);return false;}}
+function srcLine(){const armed=stems.filter(s=>s.stream);$('#src').innerHTML=armed.length===1?describe(armed[0].stream.getAudioTracks()[0])+' · Opus 320 kb/s':armed.length+' channels · Opus 320 kb/s each · 10 ms frames';}
+function updateGo(){const ok=stems.some(s=>s.stream);$('#go').disabled=!ok;
+  $('#gosub').textContent=!ok?'Select an input first':hasSignal?(stems.length>1?stems.length+' channels · stereo · Opus 320 kb/s':'Stereo · 48 kHz · Opus 320 kb/s'):'No signal yet — you can still go live';
+  $('#sig').textContent=!ok?'No input':hasSignal?'Signal present':'Silence';$('#sig').style.color=hasSignal?'var(--live)':'var(--ink2)';}
+$('#mic').onchange=()=>{if(micStream)openMic();};$('#rescan').onclick=async()=>{await listDevices();armAll();};
+navigator.mediaDevices.ondevicechange=async()=>{await listDevices();armAll();};
+(async()=>{try{(await navigator.mediaDevices.getUserMedia({audio:true})).getTracks().forEach(t=>t.stop());}catch(e){}   // permission once -> labels + real IPs in ICE
+  if(await listDevices()){if(!stems[0].deviceId){const p=devices.find(d=>/bridge 2|loopback|blackhole|aggregate/i.test(d.label))||devices[0];if(p){stems[0].deviceId=p.deviceId;saveStems();renderStrips();}}armAll();}else showErr('No audio input devices found.');engine();})();
+// ---------- status
+function setOnAir(){$('#onair').classList.toggle('on',live&&!muted);$('#onair').classList.toggle('muted',live&&muted);
+  $('#onair').querySelector('span').textContent=!live?'OFF AIR':muted?'MUTED':talking?'TALKBACK':'ON AIR';}
+function showErr(t){$('#err').innerHTML=t;$('#err').style.display=t?'block':'none';}
+setInterval(()=>{if(!live)return;const s=Math.floor((Date.now()-t0)/1000);$('#sttag').innerHTML='on air <span class=mono>'+String(Math.floor(s/60)).padStart(2,'0')+':'+String(s%60).padStart(2,'0')+'</span>';},500);
+// ---------- metering of the monitor sum + scope + per-channel minis
 (function buildScale(){const el=$('#scale');[-60,-48,-36,-24,-18,-12,-6,-3,0].forEach(db=>{const t=document.createElement('span');t.style.left=((db+60)/60*100)+'%';t.textContent=db===0?'0':db;el.append(t);});})();
 (function proMeter(){
-  const split=ac.createChannelSplitter(2);const tap=ac.createGain();tap.channelCount=2;tap.channelCountMode='explicit';   // meter what is sent: a mono source is up-mixed to both ears
-  progGain.connect(tap);micGain.connect(tap);tap.connect(split);
+  const split=ac.createChannelSplitter(2);const tap=ac.createGain();tap.channelCount=2;tap.channelCountMode='explicit';monitor.connect(tap);tap.connect(split);
   const an=[0,1].map(i=>{const a=ac.createAnalyser();a.fftSize=2048;split.connect(a,i);return a;});
-  const buf=new Float32Array(2048),bufs=[new Float32Array(2048),new Float32Array(2048)];const bars=[$('#mL'),$('#mR')],nums=[$('#pL'),$('#pR')];const hold=[-99,-99],holdT=[0,0];let quiet=60;
+  const bufs=[new Float32Array(2048),new Float32Array(2048)],mini=new Float32Array(512);const bars=[$('#mL'),$('#mR')],nums=[$('#pL'),$('#pR')];const hold=[-99,-99],holdT=[0,0];let quiet=60;
   const pct=db=>Math.max(0,Math.min(100,(db+60)/60*100));
   const cv=$('#scope'),cx=cv.getContext('2d');
   function scope(){const d=devicePixelRatio||1,r=cv.getBoundingClientRect();if(cv.width!==Math.round(r.width*d))cv.width=Math.round(r.width*d);if(cv.height!==Math.round(r.height*d))cv.height=Math.round(r.height*d);
     const W=cv.width,H=cv.height;cx.clearRect(0,0,W,H);cx.lineWidth=d;cx.strokeStyle='rgba(59,45,110,.14)';cx.setLineDash([3*d,5*d]);
     for(let i=1;i<10;i++){const x=W*i/10;cx.beginPath();cx.moveTo(x,0);cx.lineTo(x,H);cx.stroke();}for(let i=1;i<4;i++){const y=H*i/4;cx.beginPath();cx.moveTo(0,y);cx.lineTo(W,y);cx.stroke();}
     cx.setLineDash([]);cx.strokeStyle='rgba(59,45,110,.3)';cx.beginPath();cx.moveTo(0,H/2);cx.lineTo(W,H/2);cx.stroke();
-    if(!program||ac.state!=='running')return;const L=bufs[0],R=bufs[1];let start=0;for(let k=1;k<680;k++){if(L[k-1]<0&&L[k]>=0){start=start=k;break;}}
+    if(ac.state!=='running'||!stems.some(s=>s.stream))return;const L=bufs[0],R=bufs[1];let start=0;for(let k=1;k<680;k++){if(L[k-1]<0&&L[k]>=0){start=k;break;}}
     const span=1200,amp=H*0.44;const trace=(b,c,w)=>{cx.strokeStyle=c;cx.lineWidth=w*d;cx.beginPath();for(let k=0;k<span;k++){const x=W*k/span,y=H/2-b[start+k]*amp;k?cx.lineTo(x,y):cx.moveTo(x,y);}cx.stroke();};
     trace(R,'rgba(142,127,196,.9)',1.1);trace(L,'#3b2d6e',1.5);}
   (function tick(){const now=performance.now();let any=false;
@@ -499,87 +559,59 @@ renderMeta();
       bars[i].querySelector('i').style.width=pct(rms)+'%';bars[i].querySelector('b').style.left=pct(hold[i])+'%';
       nums[i].textContent=hold[i]<-90?'−∞':(hold[i]>=0?'+':'')+hold[i].toFixed(1).replace('-','−');
       if(peak>=-0.1)$('#clip').classList.add('on');if(peak>-60)any=true;});
+    for(const s of stems){if(!s.miniEl)continue;s.an.getFloatTimeDomainData(mini);let sm=0;for(let k=0;k<512;k++)sm+=mini[k]*mini[k];s.miniEl.style.width=pct(20*Math.log10(Math.sqrt(sm/512)+1e-9))+'%';}
     quiet=any?0:quiet+1;const sigNow=quiet<45;if(sigNow!==hasSignal){hasSignal=sigNow;updateGo();}
     scope();requestAnimationFrame(tick);})();
 })();
 $('#clip').onclick=()=>$('#clip').classList.remove('on');
-// ---------- devices
-async function listDevices(){const ds=(await navigator.mediaDevices.enumerateDevices()).filter(d=>d.kind==='audioinput');
-  const fill=(sel,key,prefer)=>{const cur=sel.value||localStorage[key]||'';sel.innerHTML='';
-    for(const d of ds){const o=document.createElement('option');o.value=d.deviceId;o.textContent=d.label||('Input '+d.deviceId.slice(0,6));sel.append(o);}
-    if(cur&&[...sel.options].some(o=>o.value===cur))sel.value=cur;else{const p=[...sel.options].find(o=>prefer.test(o.textContent));if(p)sel.value=p.value;}};
-  fill($('#dev'),'cc_dev',/bridge 2|loopback|blackhole|aggregate/i);fill($('#mic'),'cc_mic',/macbook|built-in|microphone|mic/i);return ds.length;}
-function describe(tr){const st=tr.getSettings();const ch=st.channelCount;const proc=(st.echoCancellation||st.noiseSuppression||st.autoGainControl);
-  return `${tr.label} · channels 1–2 · ${ch===2?'stereo':ch===1?'<b style="color:var(--wait)">mono</b>':ch+' ch'}`+(st.sampleRate?` · ${(st.sampleRate/1000).toFixed(1).replace('.0','')} kHz`:'')+` · processing ${proc?'<b style="color:var(--off)">ON</b>':'off'}`;}
-async function arm(){const id=$('#dev').value;if(!id)return;showErr('');
-  try{const s=await navigator.mediaDevices.getUserMedia({audio:{deviceId:{exact:id},channelCount:{ideal:2},sampleRate:{ideal:48000},echoCancellation:false,noiseSuppression:false,autoGainControl:false,latency:0.01}});
-    const tr=s.getAudioTracks()[0];try{tr.contentHint='music';}catch(e){}
-    tr.onended=()=>{if(program===s){showErr('The programme input went away.');disarm();}};
-    const old=program;program=s;try{localStorage.cc_dev=id;}catch(e){}
-    if(progSrc)progSrc.disconnect();progSrc=ac.createMediaStreamSource(s);progSrc.connect(progGain);
-    $('#devinfo').innerHTML=describe(tr);$('#src').innerHTML=describe(tr)+' · Opus 320 kb/s';
-    if(old&&old!==s)old.getTracks().forEach(t=>t.stop());engine();updateGo();}
-  catch(e){showErr('Could not open that input: '+e.message);disarm();}}
-function disarm(){if(progSrc)progSrc.disconnect();progSrc=null;if(program)program.getTracks().forEach(t=>t.stop());program=null;hasSignal=false;updateGo();}
-async function openMic(){const id=$('#mic').value;if(!id)return false;
-  try{const s=await navigator.mediaDevices.getUserMedia({audio:{deviceId:{exact:id},channelCount:{ideal:1},echoCancellation:true,noiseSuppression:true,autoGainControl:true}});
-    if(micStream)micStream.getTracks().forEach(t=>t.stop());if(micSrc)micSrc.disconnect();
-    micStream=s;micSrc=ac.createMediaStreamSource(s);micSrc.connect(micGain);try{localStorage.cc_mic=id;}catch(e){}return true;}
-  catch(e){showErr('Could not open the talkback mic: '+e.message);return false;}}
-function updateGo(){const ok=!!program;$('#go').disabled=!ok;
-  $('#gosub').textContent=!ok?'Select an input first':hasSignal?'Stereo · 48 kHz · Opus 320 kb/s':'No signal on channels 1–2 yet — you can still go live';
-  $('#sig').textContent=!program?'No input':hasSignal?'Signal present':'Silence on channels 1–2';$('#sig').style.color=hasSignal?'var(--live)':'var(--dim)';}
-$('#dev').onchange=arm;$('#mic').onchange=()=>{if(micStream)openMic();};$('#rescan').onclick=async()=>{await listDevices();arm();};
-navigator.mediaDevices.ondevicechange=async()=>{await listDevices();if(!program)arm();};
-(async()=>{try{(await navigator.mediaDevices.getUserMedia({audio:true})).getTracks().forEach(t=>t.stop());}catch(e){}   // permission once -> labels + real IPs in ICE
-  if(await listDevices())arm();else showErr('No audio input devices found.');engine();})();
-// ---------- status
-function setOnAir(){$('#onair').classList.toggle('on',live&&!muted);$('#onair').classList.toggle('muted',live&&muted);
-  $('#onair').querySelector('span').textContent=!live?'OFF AIR':muted?'MUTED':talking?'TALKBACK':'ON AIR';}
-function showErr(t){$('#err').innerHTML=t;$('#err').style.display=t?'block':'none';}
-setInterval(()=>{if(!live)return;const s=Math.floor((Date.now()-t0)/1000);$('#sttag').innerHTML='on air <span class=mono>'+String(Math.floor(s/60)).padStart(2,'0')+':'+String(s%60).padStart(2,'0')+'</span>';},500);
-// ---------- peers
+// ---------- peers: one track per channel + talkback, all in one connection
 function render(){$('#n').textContent=[...peers.values()].filter(p=>p.pc.connectionState==='connected').length;}
 function dropPeer(id){const p=peers.get(id);if(p){p.pc.close();peers.delete(id);render();}}
+function tuneSender(sn,kbps){try{const prm=sn.getParameters();prm.encodings=prm.encodings&&prm.encodings.length?prm.encodings:[{}];prm.encodings[0].maxBitrate=kbps*1000;prm.encodings[0].priority='high';prm.encodings[0].networkPriority='high';sn.setParameters(prm).catch(()=>{});}catch(e){}}
+function stemList(pc,p){const byTrack=new Map();for(const s of stems)if(s.stream)byTrack.set(s.track,s);byTrack.set(tbTrack,{id:'tb',name:'Talkback'});
+  return pc.getTransceivers().map(t=>{const s=byTrack.get(t.sender.track);return s?{mid:t.mid,id:s.id,name:s.name,kind:s.id==='tb'?'tb':'ch'}:null;}).filter(Boolean);}
 function makePeer(id){const old=peers.get(id);if(old)old.pc.close();
-  const pc=new RTCPeerConnection({iceServers:[]});const p={pc,cid:rnd(),pending:[]};peers.set(id,p);
-  const sn=pc.addTrack(outTrack,dest.stream);
-  try{const prm=sn.getParameters();prm.encodings=prm.encodings&&prm.encodings.length?prm.encodings:[{}];prm.encodings[0].maxBitrate=320000;prm.encodings[0].priority='high';prm.encodings[0].networkPriority='high';sn.setParameters(prm).catch(()=>{});}catch(e){}
+  const pc=new RTCPeerConnection({iceServers:[]});const p={pc,cid:rnd(),pending:[],senders:{}};peers.set(id,p);
+  for(const s of stems){if(!s.stream)continue;const sn=pc.addTrack(s.track,s.dest.stream);p.senders[s.id]=sn;tuneSender(sn,320);}
+  const tsn=pc.addTrack(tbTrack,tbDest.stream);p.senders.tb=tsn;tuneSender(tsn,96);
   pc.onicecandidate=e=>{if(e.candidate)sig.send(id,{type:'ice',cid:p.cid,c:e.candidate});};
   pc.onconnectionstatechange=()=>{render();const s=pc.connectionState;
     if(s==='failed'||s==='closed'){if(peers.get(id)===p)dropPeer(id);}
     if(s==='disconnected')setTimeout(()=>{if(peers.get(id)===p&&pc.connectionState==='disconnected')dropPeer(id);},15000);};
   pc.createOffer().then(o=>{o.sdp=stereo(o.sdp);return pc.setLocalDescription(o);})
-    .then(()=>{sig.send(id,{type:'offer',cid:p.cid,hid:HID,sdp:pc.localDescription});broadcastMeta(id);})
+    .then(()=>{sig.send(id,{type:'offer',cid:p.cid,hid:HID,sdp:pc.localDescription,stems:stemList(pc,p)});broadcastMeta(id);})
     .catch(e=>console.warn(e));render();}
+function renegotiateAll(){for(const id of [...peers.keys()])makePeer(id);}
+function announceStems(){for(const [id,p] of peers)sig.send(id,{type:'stems',stems:stemList(p.pc,p)});}
 sig.onmsg=async(from,d)=>{const p=peers.get(from);
   if(d.type==='hello'){if(live)makePeer(from);else{sig.send(from,{type:'wait'});broadcastMeta(from);}}
   else if(d.type==='answer'){if(p&&p.cid===d.cid&&p.pc.signalingState==='have-local-offer'){await p.pc.setRemoteDescription(d.sdp);
     for(const c of p.pending)await p.pc.addIceCandidate(c).catch(()=>{});p.pending=[];}}
   else if(d.type==='ice'){if(p&&p.cid===d.cid){if(p.pc.remoteDescription)await p.pc.addIceCandidate(d.c).catch(()=>{});else p.pending.push(d.c);}}
+  else if(d.type==='active'){if(!p)return;for(const [sid,on] of Object.entries(d.active||{})){const sn=p.senders[sid];if(!sn)continue;      // a student's own cue: switch off channels they muted
+    try{const prm=sn.getParameters();if(prm.encodings&&prm.encodings.length){prm.encodings[0].active=!!on;sn.setParameters(prm).catch(()=>{});}}catch(e){}}}
   else if(d.type==='bye'){dropPeer(from);}};
 sig.onreset=()=>{sig.send('*',{type:'host-ready',hid:HID});broadcastMeta();};
 sig.onoffline=()=>{toast('Server not reachable — click the CCAST app to start it again');};
 // ---------- desk actions
-$('#go').onclick=()=>{if(!program)return;engine();live=true;muted=false;talking=false;t0=Date.now();applyGains();
+$('#go').onclick=()=>{if(!stems.some(s=>s.stream))return;engine();live=true;muted=false;talking=false;t0=Date.now();applyGains();srcLine();
   $('#idle').hidden=true;$('#live').hidden=false;setOnAir();$('#mute').classList.remove('on');$('#talk').classList.remove('on');
-  for(const id of [...peers.keys()])makePeer(id);sig.send('*',{type:'host-ready',hid:HID});broadcastMeta();};
+  renegotiateAll();sig.send('*',{type:'host-ready',hid:HID});broadcastMeta();};
 $('#mute').onclick=()=>{if(!live)return;muted=!muted;applyGains();$('#mute').classList.toggle('on',muted);setOnAir();broadcastMeta();};
-async function setTalk(on){if(!live||on===talking)return;if(on&&!micStream&&!(await openMic()))return;
-  talking=on;applyGains();$('#talk').classList.toggle('on',on);setOnAir();broadcastMeta();}
+async function setTalk(on){if(!live||on===talking)return;if(on&&!micStream&&!(await openMic()))return;talking=on;applyGains();$('#talk').classList.toggle('on',on);setOnAir();broadcastMeta();}
 (function ptt(){const b=$('#talk');let down=0,latched=false;
   b.onpointerdown=e=>{e.preventDefault();b.setPointerCapture(e.pointerId);down=Date.now();if(latched){latched=false;setTalk(false);down=0;}else setTalk(true);};
   const up=()=>{if(!down)return;const held=Date.now()-down;down=0;if(held<350){latched=true;}else setTalk(false);};
   b.onpointerup=up;b.onpointercancel=up;
-  addEventListener('keydown',e=>{if(e.key==='t'&&!e.repeat&&!/input|textarea|select/i.test(e.target.tagName)){setTalk(true);}});
+  addEventListener('keydown',e=>{if(e.key==='t'&&!e.repeat&&!/input|textarea|select/i.test(e.target.tagName))setTalk(true);});
   addEventListener('keyup',e=>{if(e.key==='t'&&!latched&&!/input|textarea|select/i.test(e.target.tagName))setTalk(false);});})();
 function stopAll(){live=false;muted=false;talking=false;applyGains();
   for(const [,p] of peers)p.pc.close();peers.clear();render();sig.send('*',{type:'host-stopped'});broadcastMeta();
-  $('#idle').hidden=false;$('#live').hidden=true;setOnAir();$('#sttag').textContent='studio · ch 1';}
+  $('#idle').hidden=false;$('#live').hidden=true;setOnAir();$('#sttag').textContent='studio';}
 $('#stop').onclick=stopAll;
 addEventListener('pagehide',()=>{navigator.sendBeacon('/api/msg',JSON.stringify({from:'host',to:'*',data:{type:'host-stopped'}}));});
 if(!['localhost','127.0.0.1'].includes(location.hostname))showErr('Open this page as http://localhost:'+location.port+'/host — browsers only allow audio capture on localhost.');
-setOnAir();fetch('/api/reset?id=host').then(()=>{sig.send('*',{type:'host-ready',hid:HID});sig.run();});
+setOnAir();renderStrips();fetch('/api/reset?id=host').then(()=>{sig.send('*',{type:'host-ready',hid:HID});sig.run();});
 </script></body></html>"""
 
 LISTEN_CSS = r"""
@@ -617,6 +649,14 @@ svg.bg{position:fixed;inset:0;width:100%;height:100%;z-index:0;pointer-events:no
 .bar i{position:absolute;inset:0;width:0;background:linear-gradient(90deg,var(--ink2),var(--ink) 80%,var(--warn) 92%,var(--off) 98%);transition:width .04s linear}
 .bar b{position:absolute;top:0;bottom:0;width:2px;background:var(--ink);left:0;transition:left .1s}
 .sub2{flex:none;color:var(--ink2);font-size:12px;min-height:16px;padding:0 4px}
+/* ---- cue mixer */
+.mixer{flex:none;display:flex;gap:6px;overflow-x:auto;padding:8px 8px 6px;border:1.5px solid var(--ink);border-radius:10px;background:var(--paper)}
+.cstrip{flex:1;min-width:72px;display:flex;flex-direction:column;align-items:center;gap:2px}
+.knob.sm{width:56px;height:56px}.knob.sm .val{font-size:9px;bottom:-4px}
+.cname{font-size:9.5px;letter-spacing:.1em;text-transform:uppercase;color:var(--ink);font-weight:700;max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;margin-top:6px}
+.cbtns{display:flex;gap:4px;margin-top:3px}.cbtns button{width:26px;height:22px;border:1.5px solid var(--ink);border-radius:6px;background:transparent;color:var(--ink);font:700 10px/1 inherit;cursor:pointer;padding:0;display:grid;place-items:center}
+.cstrip.muted .cm{background:var(--warn);border-color:var(--warn);color:#fff}.cstrip.solo .cs{background:var(--live);border-color:var(--live);color:#fff}
+.cstrip.muted .knob{opacity:.4}
 /* ---- control column */
 .ctrl{display:flex;flex-direction:column;align-items:center;justify-content:space-between;gap:12px;padding:4px 0}
 .plate{width:100%;text-align:center;font-size:9.5px;letter-spacing:.2em;color:var(--ink2);text-transform:uppercase;border-bottom:1.5px dashed var(--ink3);padding-bottom:6px}
@@ -646,7 +686,7 @@ LISTEN_HTML = r"""<!doctype html><html><head><meta charset=utf-8><title>CCAST</t
 <main class=rx>
  <header class=rxhead>
   <div class=title><span class=name id=station>CCAST</span><span class=sub>receiver · rx‑1</span></div>
-  <div class="readout mono" id=lat>buffer —</div>
+  <div class="readout mono" id=lat>—</div>
  </header>
  <section class=unit><span class=scr1></span><span class=scr2></span>
   <div class=left>
@@ -662,112 +702,120 @@ LISTEN_HTML = r"""<!doctype html><html><head><meta charset=utf-8><title>CCAST</t
     <div class=meter>L<div class=bar id=mL><i></i><b></b></div></div>
     <div class=meter>R<div class=bar id=mR><i></i><b></b></div></div>
    </div>
+   <div class=mixer id=mixer hidden></div>
    <div class=sub2 id=sub>Press the power button to tune in.</div>
   </div>
   <div class=ctrl>
    <div class=plate>ccast · rx‑1</div>
    <div class=btnlbl>
-    <div class=knob id=knob title="Drag up/down or scroll">
-     <svg viewBox="0 0 100 100" fill="none" stroke="#3b2d6e" stroke-width="1.5">
-      <g id=ticks></g>
-      <circle cx="50" cy="50" r="30" fill="#fbfaf8"/><circle cx="50" cy="50" r="24" stroke-dasharray="1.5 3.2" opacity=".6"/>
-      <g id=ind><line x1="50" y1="50" x2="50" y2="24" stroke-width="2.5" stroke-linecap="round"/></g>
-     </svg>
-     <div class="val mono" id=voldb>0 dB</div>
-    </div>
+    <div class=knob id=knob title="Drag up/down or scroll · double-click resets"></div>
     <span class=lbl>volume</span>
    </div>
    <div class=pair>
     <div class=btnlbl><button class=round id=btn title="Listen / stop"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M12 3v9"/><path d="M6.3 6.6a8 8 0 1 0 11.4 0"/></svg></button><span class=lbl>listen</span></div>
     <div class=btnlbl><button class="round mute" id=lmute title="Mute on this computer only"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 9v6h4l5 4V5L8 9H4z"/><path d="M16 9l5 6M21 9l-5 6"/></svg></button><span class=lbl>mute</span></div>
    </div>
-   <div class=btnlbl><div class=sw id=seg title="Jitter buffer"><span>smooth</span><span>low lat</span></div><span class=lbl>buffer</span></div>
+   <div class=btnlbl><div class=sw id=seg title="Jitter buffer: steady 150 ms, or as low as the network allows"><span>smooth</span><span>low lat</span></div><span class=lbl>buffer</span></div>
   </div>
  </section>
 </main>
 <div class=unmute id=unmute><button id=unmuteBtn>Tap to hear</button></div>
-<audio id=au autoplay playsinline></audio>
+<div id=sinks hidden></div>
 <div class=toast id=toast></div>
 <script>%JS%
-const me='s-'+rnd();const sig=new Signal(me);const au=$('#au');
-let pc=null,listening=false,stopRx=null,timer=null,pending=[],attempt=0,receiver=null,lmuted=false;
+const me='s-'+rnd();const sig=new Signal(me);
+let pc=null,listening=false,timer=null,pending=[],attempt=0,lmuted=false;
 const meta={station:'CCAST',now:'',live:false,muted:false,talking:false};
+// ---------- playback bus (Web Audio): every received channel -> its fader -> master -> speakers
+const AC=window.AudioContext||window.webkitAudioContext;const rac=new AC({latencyHint:'interactive'});
+const master=rac.createGain();master.connect(rac.destination);const bus=rac.createGain();bus.connect(master);   // bus = pre-master sum for meters/scope
+const split=rac.createChannelSplitter(2);bus.connect(split);const N=2048,bufL=new Float32Array(N),bufR=new Float32Array(N);
+const an=rac.createAnalyser(),anR=rac.createAnalyser();an.fftSize=anR.fftSize=N;an.smoothingTimeConstant=anR.smoothingTimeConstant=0;split.connect(an,0);split.connect(anR,1);
+const chans=new Map();   // stemId -> {id,name,kind,gain,src,el,level,muted,solo}
+let receivers=[];
+function ramp(g,v,ms){const t=rac.currentTime;g.gain.cancelScheduledValues(t);g.gain.setValueAtTime(g.gain.value,t);g.gain.linearRampToValueAtTime(v,t+ms/1000);}
 // ---------- buffer switch
 let mode='smooth';try{mode=localStorage.cc_mode||'smooth';}catch(e){}
 // Chrome's jitter buffer is tuned for speech and time-stretches to chase latency, which warbles on music.
-// A fixed target keeps it steady. jitterBufferTarget is in ms; playoutDelayHint (older Chrome) is in seconds.
-function applyMode(){const ms=mode==='smooth'?150:50;if(receiver){try{receiver.jitterBufferTarget=ms;}catch(e){}try{if('playoutDelayHint' in receiver)receiver.playoutDelayHint=ms/1000;}catch(e){}}$('#seg').classList.toggle('fast',mode==='fast');}
+// A fixed target keeps it steady. Low latency: 20 ms floor — NetEq still rises above it if the network gets jittery.
+function applyMode(){const ms=mode==='smooth'?150:20;for(const r of receivers){try{r.jitterBufferTarget=ms;}catch(e){}try{if('playoutDelayHint' in r)r.playoutDelayHint=ms/1000;}catch(e){}}$('#seg').classList.toggle('fast',mode==='fast');}
 $('#seg').onclick=()=>{mode=mode==='smooth'?'fast':'smooth';try{localStorage.cc_mode=mode;}catch(e){}applyMode();};applyMode();
-// ---------- volume knob (0..1, perceptual: gain = v^2) — drag vertically or scroll
-let vol=1;try{vol=Math.min(1,Math.max(0,parseFloat(localStorage.cc_vol)));if(isNaN(vol))vol=1;}catch(e){}
-(function knob(){const k=$('#knob'),ind=$('#ind'),ticks=$('#ticks');
+// ---------- knobs (0..1, perceptual: gain = v^2) — drag vertically or scroll, double-click resets
+function makeKnob(el,v,onchange,size){el.innerHTML=`<svg viewBox="0 0 100 100" fill="none" stroke="#3b2d6e" stroke-width="1.5"><g class=ticks></g><circle cx="50" cy="50" r="30" fill="#fbfaf8"/><circle cx="50" cy="50" r="24" stroke-dasharray="1.5 3.2" opacity=".6"/><g class=ind><line x1="50" y1="50" x2="50" y2="24" stroke-width="2.5" stroke-linecap="round"/></g></svg><div class="val mono"></div>`;
+  const ticks=el.querySelector('.ticks'),ind=el.querySelector('.ind'),val=el.querySelector('.val');
   for(let i=0;i<=10;i++){const a=(-135+i*27)*Math.PI/180,r1=38,r2=i%5?41:44;const t=document.createElementNS('http://www.w3.org/2000/svg','line');
     t.setAttribute('x1',50+r1*Math.sin(a));t.setAttribute('y1',50-r1*Math.cos(a));t.setAttribute('x2',50+r2*Math.sin(a));t.setAttribute('y2',50-r2*Math.cos(a));t.setAttribute('opacity',i%5?'.5':'1');ticks.append(t);}
-  function render(){ind.setAttribute('transform',`rotate(${-135+vol*270} 50 50)`);const db=vol<=0?-Infinity:40*Math.log10(vol);$('#voldb').textContent=db===-Infinity?'−∞':(db>=-0.05?'0':db.toFixed(1).replace('-','−'))+' dB';au.volume=vol*vol;try{localStorage.cc_vol=vol;}catch(e){}}
-  let y0=null,v0=0;k.onpointerdown=e=>{k.setPointerCapture(e.pointerId);y0=e.clientY;v0=vol;};k.onpointermove=e=>{if(y0===null)return;vol=Math.min(1,Math.max(0,v0+(y0-e.clientY)/160));render();};
-  k.onpointerup=k.onpointercancel=()=>{y0=null;};k.onwheel=e=>{e.preventDefault();vol=Math.min(1,Math.max(0,vol-Math.sign(e.deltaY)*0.03));render();};k.ondblclick=()=>{vol=1;render();};render();})();
+  const k={get v(){return v;},set(nv){v=Math.min(1,Math.max(0,nv));ind.setAttribute('transform',`rotate(${-135+v*270} 50 50)`);const db=v<=0?-Infinity:40*Math.log10(v);val.textContent=db===-Infinity?'−∞':(db>=-0.05?'0':db.toFixed(1).replace('-','−'))+(size?'':' dB');onchange(v);}};
+  let y0=null,v0=0;el.onpointerdown=e=>{el.setPointerCapture(e.pointerId);y0=e.clientY;v0=v;};el.onpointermove=e=>{if(y0===null)return;k.set(v0+(y0-e.clientY)/160);};
+  el.onpointerup=el.onpointercancel=()=>{y0=null;};el.onwheel=e=>{e.preventDefault();k.set(v-Math.sign(e.deltaY)*0.03);};el.ondblclick=()=>k.set(1);k.set(v);return k;}
+let vol=1;try{vol=parseFloat(localStorage.cc_vol);if(isNaN(vol))vol=1;}catch(e){}
+const volKnob=makeKnob($('#knob'),vol,v=>{vol=v;ramp(master,lmuted?0:v*v,30);try{localStorage.cc_vol=v;}catch(e){}});
+// ---------- cue mixer (appears when the studio sends more than one channel)
+let levels={};try{levels=JSON.parse(localStorage.cc_levels||'{}');}catch(e){}
+function chanGain(c){if(c.kind==='tb')return 1;const anySolo=[...chans.values()].some(x=>x.kind!=='tb'&&x.solo);const audible=!c.muted&&(!anySolo||c.solo);return audible?c.level*c.level:0;}
+function applyMix(){const active={};for(const c of chans.values()){ramp(c.gain,chanGain(c),40);if(c.kind!=='tb')active[c.id]=chanGain(c)>0;}
+  clearTimeout(applyMix.t);applyMix.t=setTimeout(()=>sig.send('host',{type:'active',active}),250);   // tell the studio which channels to actually send
+  for(const c of chans.values())if(c.el){c.el.classList.toggle('muted',c.muted);c.el.classList.toggle('solo',c.solo);}}
+function renderMixer(){const list=[...chans.values()].filter(c=>c.kind!=='tb');const mx=$('#mixer');mx.hidden=list.length<2;mx.innerHTML='';if(list.length<2)return;
+  for(const c of list){const el=document.createElement('div');el.className='cstrip';el.innerHTML=`<div class="knob sm"></div><div class=cname title="${c.name}">${c.name}</div><div class=cbtns><button class=cm title="Mute">M</button><button class=cs title="Solo">S</button></div>`;
+    c.el=el;makeKnob(el.querySelector('.knob'),c.level,v=>{c.level=v;levels[c.name]=v;try{localStorage.cc_levels=JSON.stringify(levels);}catch(e){}applyMix();},true);
+    el.querySelector('.cm').onclick=()=>{c.muted=!c.muted;applyMix();};el.querySelector('.cs').onclick=()=>{c.solo=!c.solo;applyMix();};mx.append(el);}
+  applyMix();}
+function addChan(info,stream){const g=rac.createGain();g.gain.value=0;const src=rac.createMediaStreamSource(stream);src.connect(g);g.connect(bus);
+  // Chrome only delivers remote WebRTC audio into Web Audio while the stream is also attached to a media element
+  const el=document.createElement('audio');el.srcObject=stream;el.muted=true;el.autoplay=true;el.playsInline=true;$('#sinks').append(el);el.play().catch(()=>{});
+  const c={id:info.id,name:info.name,kind:info.kind,gain:g,src,sink:el,level:info.kind==='tb'?1:(levels[info.name]!=null?levels[info.name]:1),muted:false,solo:false};chans.set(c.id,c);ramp(g,chanGain(c),60);}
+function clearChans(){for(const c of chans.values()){try{c.src.disconnect();}catch(e){}c.sink.remove();}chans.clear();$('#mixer').hidden=true;$('#mixer').innerHTML='';}
 // ---------- state
-const connected=()=>pc&&pc.connectionState==='connected';
-let scopeMode='off';
+const connected=()=>pc&&pc.connectionState==='connected';let scopeMode='off';
 function setState(cls,head,sub){$('#dot').className='dot '+cls;$('#st').textContent=head;$('#sub').textContent=sub||'';scopeMode=cls==='live'?'live':cls==='wait'?'wait':'off';}
 function renderMeta(){$('#station').textContent=meta.station;document.title=meta.station;const n=meta.now||(meta.live&&connected()?'Live from the studio':'');$('#now').textContent=n;$('#now').classList.toggle('hide',!n);if(connected())showLive();}
-function showLive(){if(lmuted)setState('wait','Muted here','Press mute again to unmute');else if(meta.talking)setState('live','Teacher talking','');else if(meta.muted)setState('wait','Muted by the teacher','It comes back automatically');else setState('live','On air','');}
-$('#lmute').onclick=()=>{lmuted=!lmuted;au.muted=lmuted;$('#lmute').classList.toggle('on',lmuted);if(connected())showLive();};
+function showLive(){if(lmuted)setState('wait','Muted here','Press mute again to unmute');else if(meta.talking)setState('live','Teacher talking','');else if(meta.muted)setState('wait','Muted by the teacher','It comes back automatically');else setState('live','On air',chans.size>2?'Your own cue mix — knobs, mute and solo per channel':'');}
+$('#lmute').onclick=()=>{lmuted=!lmuted;ramp(master,lmuted?0:vol*vol,30);$('#lmute').classList.toggle('on',lmuted);if(connected())showLive();};
 function schedule(ms){clearTimeout(timer);timer=setTimeout(()=>{if(listening&&!connected())hello();},ms);}
 function hello(){if(!listening)return;attempt++;sig.send('host',{type:'hello'});setState('wait','Tuning in…','Looking for the studio');schedule(Math.min(15000,4000+attempt*2000));}
-function teardown(){if(pc){pc.onconnectionstatechange=null;pc.close();pc=null;}receiver=null;pending=[];lastBytes=lastT=lastJbD=lastJbN=0;if(stopRx)stopRx();stopRx=null;au.srcObject=null;$('#lat').textContent='buffer —';$('#s1').textContent='';renderMeta();}
-// ---------- the oscilloscope. graticule on one canvas, the beam with phosphor persistence on another.
+function teardown(){if(pc){pc.onconnectionstatechange=null;pc.close();pc=null;}receivers=[];pending=[];lastBytes=lastT=lastJbD=lastJbN=0;clearChans();$('#lat').textContent='—';$('#s1').textContent='';renderMeta();}
+// ---------- the oscilloscope + meters on the receive bus
 (function buildScale(){const el=$('#scale');[-60,-48,-36,-24,-18,-12,-6,-3,0].forEach(db=>{const t=document.createElement('span');t.style.left=((db+60)/60*100)+'%';t.textContent=db===0?'0':db;el.append(t);});})();
-const gr=$('#grat'),gx=gr.getContext('2d'),bm=$('#beam'),bx=bm.getContext('2d');
-let an=null,anR=null;const N=2048,bufL=new Float32Array(N),bufR=new Float32Array(N);
-function rx(stream){const AC=window.AudioContext||window.webkitAudioContext;const ac=new AC();const src=ac.createMediaStreamSource(stream);const split=ac.createChannelSplitter(2);src.connect(split);
-  an=ac.createAnalyser();anR=ac.createAnalyser();an.fftSize=anR.fftSize=N;an.smoothingTimeConstant=anR.smoothingTimeConstant=0;split.connect(an,0);split.connect(anR,1);
-  const bars=[$('#mL'),$('#mR')];const peak=[0,0];let alive=true;
-  (function vu(){if(!alive)return;[an,anR].forEach((a,i)=>{const b=i?bufR:bufL;a.getFloatTimeDomainData(b);let s=0;for(let k=0;k<N;k++)s+=b[k]*b[k];
-    const db=20*Math.log10(Math.sqrt(s/N)+1e-9);const pct=Math.max(0,Math.min(100,(db+60)/60*100));peak[i]=Math.max(pct,peak[i]-0.6);
-    bars[i].querySelector('i').style.width=pct+'%';bars[i].querySelector('b').style.left=peak[i]+'%';});requestAnimationFrame(vu);})();
-  if(ac.state==='suspended')ac.resume().catch(()=>{});
-  return()=>{alive=false;an=anR=null;bars.forEach(e=>{e.querySelector('i').style.width=0;e.querySelector('b').style.left=0;});ac.close().catch(()=>{});};}
-let W=0,H=0,D=1;
+const gr=$('#grat'),gx=gr.getContext('2d'),bm=$('#beam'),bx=bm.getContext('2d');let W=0,H=0,D=1;
 function graticule(){const r=gr.getBoundingClientRect();D=devicePixelRatio||1;W=Math.round(r.width*D);H=Math.round(r.height*D);if(!W||!H)return;
-  gr.width=bm.width=W;gr.height=bm.height=H;gx.clearRect(0,0,W,H);
-  gx.strokeStyle='rgba(59,45,110,.18)';gx.lineWidth=D;gx.setLineDash([]);
+  gr.width=bm.width=W;gr.height=bm.height=H;gx.clearRect(0,0,W,H);gx.strokeStyle='rgba(59,45,110,.18)';gx.lineWidth=D;
   for(let i=1;i<10;i++){const x=Math.round(W*i/10)+.5;gx.beginPath();gx.moveTo(x,0);gx.lineTo(x,H);gx.stroke();}
   for(let i=1;i<8;i++){const y=Math.round(H*i/8)+.5;gx.beginPath();gx.moveTo(0,y);gx.lineTo(W,y);gx.stroke();}
   gx.strokeStyle='rgba(59,45,110,.45)';const cy=Math.round(H/2)+.5,cxm=Math.round(W/2)+.5;gx.beginPath();gx.moveTo(0,cy);gx.lineTo(W,cy);gx.moveTo(cxm,0);gx.lineTo(cxm,H);gx.stroke();
-  // minor ticks along the centre axes, 5 per division, like a real graticule
   gx.beginPath();for(let i=0;i<=50;i++){const x=W*i/50,l=(i%5?3:6)*D;gx.moveTo(x,cy-l);gx.lineTo(x,cy+l);}for(let i=0;i<=40;i++){const y=H*i/40,l=(i%5?3:6)*D;gx.moveTo(cxm-l,y);gx.lineTo(cxm+l,y);}gx.stroke();
-  // subtle vignette at the edges of the glass
   const v=gx.createRadialGradient(W/2,H/2,Math.min(W,H)*.45,W/2,H/2,Math.max(W,H)*.75);v.addColorStop(0,'rgba(59,45,110,0)');v.addColorStop(1,'rgba(59,45,110,.08)');gx.fillStyle=v;gx.fillRect(0,0,W,H);}
 new ResizeObserver(graticule).observe(gr);graticule();
-let t0=performance.now();
-function draw(){if(W&&H){
-  // phosphor persistence: fade what was drawn before instead of clearing it
-  bx.globalCompositeOperation='destination-out';bx.fillStyle='rgba(0,0,0,.28)';bx.fillRect(0,0,W,H);bx.globalCompositeOperation='source-over';
-  const t=(performance.now()-t0)/1000;bx.shadowColor='rgba(59,45,110,.55)';bx.shadowBlur=6*D;bx.lineJoin='round';
-  if(an&&scopeMode!=='off'&&!lmuted){
-    let start=0;for(let k=1;k<N/3;k++){if(bufL[k-1]<0&&bufL[k]>=0){start=k;break;}}     // trigger: rising zero crossing
-    const span=1200,amp=H*0.42;                                                            // 1200 samples @48 kHz = 25 ms = 2.5 ms/div
-    const trace=(b,c,w)=>{bx.strokeStyle=c;bx.lineWidth=w*D;bx.beginPath();for(let k=0;k<span;k++){const x=W*k/span,y=H/2-b[start+k]*amp;k?bx.lineTo(x,y):bx.moveTo(x,y);}bx.stroke();};
-    trace(bufR,'rgba(142,127,196,.85)',1.2);trace(bufL,'#3b2d6e',1.7);
-  }else if(scopeMode==='wait'){const x=((t*0.4)%1)*W;bx.fillStyle='#3b2d6e';bx.beginPath();bx.arc(x,H/2,3*D,0,7);bx.fill();}
-  else{bx.strokeStyle='#8e7fc4';bx.lineWidth=1.3*D;bx.beginPath();for(let k=0;k<160;k++){const x=W*k/159,y=H/2+(Math.sin(k*1.7+t*3)*0.35+Math.sin(k*0.31-t)*0.25)*D;k?bx.lineTo(x,y):bx.moveTo(x,y);}bx.stroke();}
-  bx.shadowBlur=0;}
+const bars=[$('#mL'),$('#mR')],peak=[0,0];let t0=performance.now();
+function draw(){
+  if(connected()){[an,anR].forEach((a,i)=>{const b=i?bufR:bufL;a.getFloatTimeDomainData(b);let s=0;for(let k=0;k<N;k++)s+=b[k]*b[k];
+    const db=20*Math.log10(Math.sqrt(s/N)+1e-9);const pct=Math.max(0,Math.min(100,(db+60)/60*100));peak[i]=Math.max(pct,peak[i]-0.6);
+    bars[i].querySelector('i').style.width=pct+'%';bars[i].querySelector('b').style.left=peak[i]+'%';});}
+  if(W&&H){bx.globalCompositeOperation='destination-out';bx.fillStyle='rgba(0,0,0,.28)';bx.fillRect(0,0,W,H);bx.globalCompositeOperation='source-over';   // phosphor persistence
+    const t=(performance.now()-t0)/1000;bx.shadowColor='rgba(59,45,110,.55)';bx.shadowBlur=6*D;bx.lineJoin='round';
+    if(connected()&&scopeMode!=='off'&&!lmuted){let start=0;for(let k=1;k<N/3;k++){if(bufL[k-1]<0&&bufL[k]>=0){start=k;break;}}
+      const span=1200,amp=H*0.42;const trace=(b,c,w)=>{bx.strokeStyle=c;bx.lineWidth=w*D;bx.beginPath();for(let k=0;k<span;k++){const x=W*k/span,y=H/2-b[start+k]*amp;k?bx.lineTo(x,y):bx.moveTo(x,y);}bx.stroke();};
+      trace(bufR,'rgba(142,127,196,.85)',1.2);trace(bufL,'#3b2d6e',1.7);}
+    else if(scopeMode==='wait'){const x=((t*0.4)%1)*W;bx.fillStyle='#3b2d6e';bx.beginPath();bx.arc(x,H/2,3*D,0,7);bx.fill();}
+    else{bx.strokeStyle='#8e7fc4';bx.lineWidth=1.3*D;bx.beginPath();for(let k=0;k<160;k++){const x=W*k/159,y=H/2+(Math.sin(k*1.7+t*3)*0.35+Math.sin(k*0.31-t)*0.25)*D;k?bx.lineTo(x,y):bx.moveTo(x,y);}bx.stroke();}
+    bx.shadowBlur=0;}
   requestAnimationFrame(draw);}
 draw();
 // ---------- signalling
+let stemInfo=[];
 sig.onmsg=async(from,d)=>{if(from!=='host')return;
   if(d.type==='meta'){Object.assign(meta,d);renderMeta();return;}
   if(!listening)return;
   if(d.type==='wait'){setState('wait','Studio is off air','You’ll be connected automatically when it goes live');schedule(6000);}
   else if(d.type==='host-ready'){if(!(connected()&&pc.hid===d.hid))hello();}
   else if(d.type==='host-stopped'){teardown();setState('wait','Studio went off air','You’ll reconnect automatically when it starts again');schedule(8000);}
-  else if(d.type==='offer'){teardown();pc=new RTCPeerConnection({iceServers:[]});pc.cid=d.cid;pc.hid=d.hid;
-    pc.ontrack=e=>{receiver=e.receiver;applyMode();au.srcObject=e.streams[0];au.play().then(()=>$('#unmute').classList.remove('show')).catch(()=>$('#unmute').classList.add('show'));
-      if(stopRx)stopRx();stopRx=rx(e.streams[0]);};
+  else if(d.type==='stems'){stemInfo=d.stems||[];for(const i of stemInfo){const c=chans.get(i.id);if(c)c.name=i.name;}renderMixer();}
+  else if(d.type==='offer'){teardown();stemInfo=d.stems||[];pc=new RTCPeerConnection({iceServers:[]});pc.cid=d.cid;pc.hid=d.hid;
+    pc.ontrack=e=>{const mid=e.transceiver.mid;const info=stemInfo.find(s=>s.mid===mid)||{id:'m'+mid,name:'Channel',kind:'ch'};receivers.push(e.receiver);applyMode();
+      addChan(info,e.streams[0]);renderMixer();rac.resume().then(()=>$('#unmute').classList.remove('show')).catch(()=>$('#unmute').classList.add('show'));};
     pc.onicecandidate=e=>{if(e.candidate)sig.send('host',{type:'ice',cid:pc.cid,c:e.candidate});};
     pc.onconnectionstatechange=()=>{const s=pc.connectionState;
-      if(s==='connected'){attempt=0;clearTimeout(timer);showLive();renderMeta();}
+      if(s==='connected'){attempt=0;clearTimeout(timer);showLive();renderMeta();if(rac.state!=='running')$('#unmute').classList.add('show');}
       else if(s==='disconnected'){setState('wait','Reconnecting…','');schedule(3000);}
       else if(s==='failed'){setState('wait','Reconnecting…','');hello();}};
     await pc.setRemoteDescription(d.sdp);const a=await pc.createAnswer();a.sdp=stereo(a.sdp);await pc.setLocalDescription(a);
@@ -778,19 +826,24 @@ sig.onreset=()=>{if(!listening)return;if(connected())showLive();else hello();}; 
 sig.onoffline=()=>{if(listening&&!connected())setState('off','Studio not reachable','Are you on the same Wi-Fi? Retrying…');};
 addEventListener('online',()=>{if(listening)hello();});
 document.addEventListener('visibilitychange',()=>{if(!document.hidden&&listening&&!connected())hello();});
-$('#unmuteBtn').onclick=()=>{au.play().then(()=>$('#unmute').classList.remove('show')).catch(()=>{});};
-$('#btn').onclick=()=>{if(!listening){listening=true;au.play().catch(()=>{});$('#btn').classList.add('on');attempt=0;hello();}
+$('#unmuteBtn').onclick=()=>{rac.resume().then(()=>$('#unmute').classList.remove('show')).catch(()=>{});};
+$('#btn').onclick=()=>{if(!listening){listening=true;rac.resume().catch(()=>{});$('#btn').classList.add('on');attempt=0;hello();}
   else{listening=false;clearTimeout(timer);teardown();sig.send('host',{type:'bye'});$('#btn').classList.remove('on');setState('','Off air','Press the power button to tune in again.');}};
 addEventListener('pagehide',()=>{if(listening)navigator.sendBeacon('/api/msg',JSON.stringify({from:me,to:'host',data:{type:'bye'}}));});
-// ---------- readouts
+// ---------- readouts + end-to-end latency estimate
 let lastBytes=0,lastT=0,lastJbD=0,lastJbN=0;
-setInterval(async()=>{if(!connected())return;try{const st=await pc.getStats();let rtt=null,lost=null,jb=null,bytes=0,codec='';
+setInterval(async()=>{if(!connected())return;try{const st=await pc.getStats();let rtt=null,lost=0,jbD=0,jbN=0,bytes=0,codec='',poD=0,poN=0,n=0;
   st.forEach(r=>{if(r.type==='candidate-pair'&&r.nominated&&r.currentRoundTripTime!=null)rtt=r.currentRoundTripTime;
-    if(r.type==='inbound-rtp'){lost=r.packetsLost;bytes=r.bytesReceived;const dN=(r.jitterBufferEmittedCount||0)-lastJbN,dD=(r.jitterBufferDelay||0)-lastJbD;if(dN>0)jb=dD/dN;lastJbN=r.jitterBufferEmittedCount||0;lastJbD=r.jitterBufferDelay||0;}
+    if(r.type==='inbound-rtp'&&r.kind==='audio'){n++;lost+=r.packetsLost||0;bytes+=r.bytesReceived||0;jbD+=r.jitterBufferDelay||0;jbN+=r.jitterBufferEmittedCount||0;}
+    if(r.type==='media-playout'){poD+=r.totalPlayoutDelay||0;poN+=r.totalSamplesCount||0;}
     if(r.type==='codec'&&/opus/i.test(r.mimeType))codec='Opus '+(r.channels===2?'stereo':'mono');});
+  const dN=jbN-lastJbN,dD=jbD-lastJbD;const jb=dN>0?dD/dN:null;lastJbN=jbN;lastJbD=jbD;
   const now=performance.now();const kbps=lastT?Math.round((bytes-lastBytes)*8/((now-lastT)/1000)/1000):0;lastBytes=bytes;lastT=now;
-  $('#lat').textContent=(jb!=null?'buffer '+Math.round(jb*1000)+' ms':'buffer —')+(rtt!=null?' · net '+Math.round(rtt*1000)+' ms':'')+(lost?' · lost '+lost:'');
-  $('#s1').textContent=codec+(kbps?' · '+kbps+' kb/s':'');}catch(e){}},2000);
+  const out=(rac.outputLatency||0)+(rac.baseLatency||0);   // the audible path is Web Audio: jitter buffer -> graph -> device
+  // estimate: capture ≈10 ms + studio mixer ≈3 ms + 10 ms Opus frame + half the round trip + jitter buffer + this page's output latency
+  const est=jb!=null?Math.round((0.010+0.003+0.010+(rtt||0)/2+jb+out)*1000):null;
+  $('#lat').textContent=(est!=null?'≈ '+est+' ms end-to-end · ':'')+(jb!=null?'buffer '+Math.round(jb*1000)+' ms':'')+(rtt!=null?' · net '+Math.round(rtt*1000)+' ms':'')+(lost?' · lost '+lost:'');
+  $('#s1').textContent=codec+(n>1?' × '+(n-1)+'+tb':'')+(kbps?' · '+kbps+' kb/s':'');}catch(e){}},2000);
 renderMeta();sig.run();
 </script></body></html>"""
 
