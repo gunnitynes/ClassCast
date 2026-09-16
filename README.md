@@ -53,6 +53,24 @@ devices at once. This Mac has six virtual stereo devices installed with Pro Tool
 Other ways onto channels 1–2: a physical loopback (spare line-out → inputs
 1–2), or an interface's Loopback feature (Scarlett, EVO, MOTU, RME).
 
+## Click track — follows the DAW
+Students have a native **click** (soft sidestick or shaker, accent on the 1) that
+runs in time with your DAW's transport: on when they want it, off when not, and
+it stops when you stop. It is synthesised on their machine and **delayed by the
+measured stream latency**, so it lands on the music they hear, not ahead of it.
+Timing is within ~0.5 ms of the beat grid.
+
+Sync source is **MIDI Clock over the IAC bus** read by the studio page (Web MIDI)
+— no installs, works with Live and Pro Tools alike. (Ableton Link needs a native
+library, which a browser + stdlib Python cannot host; MIDI clock gives the same
+result here.)
+1. Audio MIDI Setup → Window → MIDI Studio → IAC Driver → **Device is online**.
+2. Ableton Live: Preferences → Link/Tempo/MIDI → Output *IAC Driver Bus 1* →
+   **Sync** on. Pro Tools: Setup → Peripherals → Synchronization →
+   **MIDI Beat Clock** → IAC Bus 1.
+3. Studio page → **Clock · MIDI in** → pick the IAC bus; set **beats / bar**.
+   The transport readout shows ▶ tempo · bar.beat while the DAW plays.
+
 ## Latency
 Opus runs in **10 ms frames**; the receiver's **Low lat** setting floors the
 jitter buffer at 20 ms (it rises by itself if the Wi‑Fi gets jittery), **Smooth**

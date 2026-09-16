@@ -333,6 +333,11 @@ select{background-image:linear-gradient(45deg,transparent 50%,var(--ink) 50%),li
 .strip .mini{height:8px;border:1.5px solid var(--ink);border-radius:4px;overflow:hidden;background:var(--paper)}.strip .mini i{display:block;height:100%;width:0;background:linear-gradient(90deg,var(--ink2),var(--ink));transition:width .05s}
 .strip .x{padding:7px 10px;font-size:14px}
 @media(max-width:640px){.strip{grid-template-columns:22px 1fr 40px}.strip select{grid-column:2/3}.strip .mini{grid-column:2/3}}
+/* clock */
+.clockrow{display:grid;grid-template-columns:minmax(0,1.2fr) 110px minmax(0,1fr);gap:12px;align-items:end;margin-top:14px;padding-top:14px;border-top:1.5px dashed var(--ink3)}
+@media(max-width:640px){.clockrow{grid-template-columns:1fr 1fr}.clockstat{grid-column:1/-1}}
+.clockstat #clockst{font-size:14px;padding:11px 0 4px;color:var(--ink)}.clockstat #clockst.run{color:var(--live)}
+.beats{display:flex;gap:6px;height:10px}.beats i{width:10px;height:10px;border-radius:50%;border:1.5px solid var(--ink);background:transparent}.beats i.on{background:var(--ink)}.beats i.one{border-color:var(--live)}.beats i.one.on{background:var(--live)}
 /* input + metering */
 .srcrow{display:flex;gap:10px;align-items:flex-end}.srcrow .grow{flex:1;min-width:0}
 .devinfo{color:var(--ink2);font-size:13px;margin-top:10px;min-height:20px}.devinfo b{color:var(--ink)}
@@ -408,6 +413,12 @@ HOST_HTML = r"""<!doctype html><html><head><meta charset=utf-8><title>CCAST · S
 <section class=card id=studio>
  <div class=chhead><label style="margin:0">Channels · each is the first stereo pair of a device</label><button class="ghost icon" id=addch>+ Channel</button><button class="ghost icon" id=rescan title="Rescan audio devices">⟳</button></div>
  <div id=strips></div>
+ <div class=clockrow>
+  <div><label>Clock · MIDI in</label><select id=midiin><option value="">— connect —</option></select></div>
+  <div><label>Beats / bar</label><select id=bpb><option>2</option><option>3</option><option selected>4</option><option>5</option><option>6</option><option>7</option></select></div>
+  <div class=clockstat><label>DAW transport</label><div class="mono" id=clockst>no clock</div><div class=beats id=beats></div></div>
+ </div>
+ <div class=hint id=clockhint>Send MIDI Clock from the DAW to the <b>IAC Driver</b> (Audio MIDI Setup → MIDI Studio → IAC Driver → <i>Device is online</i>). Ableton Live: Preferences → Link/Tempo/MIDI → Output IAC Bus → <b>Sync</b> on. Pro Tools: Setup → Peripherals → Synchronization → <b>MIDI Beat Clock</b> → IAC Bus. Students then get a native click that follows your transport.</div>
  <div class=hint id=chhint>One channel = the normal stream. Add more and every student gets their own cue mix: knobs, mute and solo per channel. Six virtual stereo devices come with this Mac (Pro Tools Audio Bridge 2‑A, 2‑B, 6, 16, 32, 64) — combine them with your interface in an Aggregate Device and route DAW sends to them.</div>
 
  <div class=vu>
@@ -564,6 +575,35 @@ setInterval(()=>{if(!live)return;const s=Math.floor((Date.now()-t0)/1000);$('#st
     scope();requestAnimationFrame(tick);})();
 })();
 $('#clip').onclick=()=>$('#clip').classList.remove('on');
+// ---------- clock: MIDI Clock in (Web MIDI), fitted to a tempo/phase line, sent to students over data channels
+const clock={running:false,bpm:0,bpb:4,ticks:0,line:null,seq:0,lastTick:0};let midi=null;const tickT=[];
+try{clock.bpb=parseInt(localStorage.cc_bpb)||4;}catch(e){}$('#bpb').value=clock.bpb;
+$('#bpb').onchange=()=>{clock.bpb=parseInt($('#bpb').value)||4;try{localStorage.cc_bpb=clock.bpb;}catch(e){}renderBeats();sendClockAll();};
+function fitLine(){if(tickT.length<12)return;const n=tickT.length;let sk=0,st=0,skk=0,skt=0;for(const [k,t] of tickT){sk+=k;st+=t;skk+=k*k;skt+=k*t;}
+  const b=(n*skt-sk*st)/(n*skk-sk*sk),a=(st-b*sk)/n;if(!(b>0))return;const [kl]=tickT[n-1];
+  clock.bpm=60000/(b*24);clock.line={beat:kl/24,t:a+b*kl,bpm:clock.bpm};}
+function onMidi(e){const st=e.data[0],t=e.timeStamp;
+  if(st===0xF8){clock.ticks++;clock.lastTick=t;tickT.push([clock.ticks,t]);if(tickT.length>96)tickT.shift();if(!clock.running){clock.running=true;sendClockAll();}fitLine();if(clock.ticks%24===0)sendClockAll();renderClock();}
+  else if(st===0xFA){clock.ticks=0;tickT.length=0;clock.running=true;clock.line=null;sendClockAll();renderClock();}
+  else if(st===0xFB){clock.running=true;sendClockAll();renderClock();}
+  else if(st===0xFC){clock.running=false;sendClockAll();renderClock();}
+  else if(st===0xF2){clock.ticks=((e.data[1]|0)|((e.data[2]|0)<<7))*6;tickT.length=0;clock.line=null;}}
+setInterval(()=>{if(clock.running&&performance.now()-clock.lastTick>600){clock.running=false;sendClockAll();renderClock();}},250);   // ticks stopped without a Stop message
+function renderClock(){const el=$('#clockst');if(!midi){el.textContent='no clock';el.classList.remove('run');return;}
+  const bpm=clock.bpm?clock.bpm.toFixed(1)+' bpm':'— bpm';const beat=Math.floor(clock.ticks/24);const bar=Math.floor(beat/clock.bpb)+1,bib=beat%clock.bpb+1;
+  el.textContent=(clock.running?'▶ ':'■ ')+bpm+(clock.ticks?`  ·  ${bar}.${bib}`:'')+(clock.running?'':'  stopped');el.classList.toggle('run',clock.running);renderBeats(bib-1);}
+function renderBeats(active){const b=$('#beats');if(b.children.length!==clock.bpb){b.innerHTML='';for(let i=0;i<clock.bpb;i++){const d=document.createElement('i');if(i===0)d.className='one';b.append(d);}}
+  [...b.children].forEach((d,i)=>d.classList.toggle('on',clock.running&&i===active));}
+function clockMsg(){clock.seq++;const l=clock.line;return JSON.stringify({type:'clock',seq:clock.seq,running:clock.running,bpm:clock.bpm,bpb:clock.bpb,beat:l?l.beat:clock.ticks/24,t:l?l.t:performance.now(),now:performance.now()});}
+function sendClockAll(){const m=clockMsg();for(const p of peers.values())if(p.dc&&p.dc.readyState==='open'){try{p.dc.send(m);}catch(e){}}}
+async function midiSetup(){if(!navigator.requestMIDIAccess){$('#midiin').innerHTML='<option value="">Web MIDI not available</option>';return;}
+  try{midi=await navigator.requestMIDIAccess({sysex:false});}catch(e){$('#midiin').innerHTML='<option value="">MIDI access denied</option>';return;}
+  const fill=()=>{const cur=$('#midiin').value||localStorage.cc_midi||'';$('#midiin').innerHTML='<option value="">off</option>';for(const inp of midi.inputs.values()){const o=document.createElement('option');o.value=inp.id;o.textContent=inp.name;$('#midiin').append(o);}
+    if(cur&&[...$('#midiin').options].some(o=>o.value===cur))$('#midiin').value=cur;else{const iac=[...midi.inputs.values()].find(i=>/iac/i.test(i.name));if(iac)$('#midiin').value=iac.id;}attach();};
+  const attach=()=>{for(const inp of midi.inputs.values())inp.onmidimessage=null;const inp=midi.inputs.get($('#midiin').value);if(inp){inp.onmidimessage=onMidi;try{localStorage.cc_midi=inp.id;}catch(e){}}
+    clock.running=false;tickT.length=0;clock.line=null;renderClock();};
+  midi.onstatechange=fill;$('#midiin').onchange=attach;fill();}
+midiSetup();
 // ---------- peers: one track per channel + talkback, all in one connection
 function render(){$('#n').textContent=[...peers.values()].filter(p=>p.pc.connectionState==='connected').length;}
 function dropPeer(id){const p=peers.get(id);if(p){p.pc.close();peers.delete(id);render();}}
@@ -574,6 +614,10 @@ function makePeer(id){const old=peers.get(id);if(old)old.pc.close();
   const pc=new RTCPeerConnection({iceServers:[]});const p={pc,cid:rnd(),pending:[],senders:{}};peers.set(id,p);
   for(const s of stems){if(!s.stream)continue;const sn=pc.addTrack(s.track,s.dest.stream);p.senders[s.id]=sn;tuneSender(sn,320);}
   const tsn=pc.addTrack(tbTrack,tbDest.stream);p.senders.tb=tsn;tuneSender(tsn,96);
+  // data channel: clock timeline + clock-offset pings (unordered, no retransmits: newest wins)
+  const dc=pc.createDataChannel('clock',{ordered:false,maxRetransmits:0});p.dc=dc;
+  dc.onopen=()=>{try{dc.send(clockMsg());}catch(e){}};
+  dc.onmessage=e=>{try{const m=JSON.parse(e.data);if(m.type==='ping')dc.send(JSON.stringify({type:'pong',t1:m.t1,t2:performance.now()}));}catch(err){}};
   pc.onicecandidate=e=>{if(e.candidate)sig.send(id,{type:'ice',cid:p.cid,c:e.candidate});};
   pc.onconnectionstatechange=()=>{render();const s=pc.connectionState;
     if(s==='failed'||s==='closed'){if(peers.get(id)===p)dropPeer(id);}
@@ -636,7 +680,8 @@ svg.bg{position:fixed;inset:0;width:100%;height:100%;z-index:0;pointer-events:no
 .glass canvas{position:absolute;inset:0;width:100%;height:100%;display:block}
 .ovl{position:absolute;font-size:10.5px;letter-spacing:.12em;text-transform:uppercase;color:var(--ink);font-family:ui-monospace,Menlo,monospace;pointer-events:none}
 .ovl:empty,.ovl.hide{display:none}
-.ovl.tl{left:12px;top:9px;display:flex;align-items:center;gap:7px}.ovl.tr{right:12px;top:9px;color:var(--ink2)}
+.ovl.tl{left:12px;top:9px;display:flex;align-items:center;gap:7px}
+.ovl.tc{left:50%;top:9px;transform:translateX(-50%);display:flex;align-items:center;gap:8px}.ovl.tc i{width:7px;height:7px;border-radius:50%;border:1.5px solid var(--ink);display:inline-block}.ovl.tc i.on{background:var(--ink)}.ovl.tc i.one{border-color:var(--live)}.ovl.tc i.one.on{background:var(--live)}.ovl.tr{right:12px;top:9px;color:var(--ink2)}
 .ovl.bl{left:12px;bottom:8px;max-width:60%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;text-transform:none;letter-spacing:.02em;font-weight:600;font-family:inherit;font-size:12px}
 .ovl.br{right:12px;bottom:8px;color:var(--ink2)}
 .dot{width:8px;height:8px;border-radius:50%;border:1.5px solid var(--ink);flex:none}
@@ -658,10 +703,10 @@ svg.bg{position:fixed;inset:0;width:100%;height:100%;z-index:0;pointer-events:no
 .cstrip.muted .cm{background:var(--warn);border-color:var(--warn);color:#fff}.cstrip.solo .cs{background:var(--live);border-color:var(--live);color:#fff}
 .cstrip.muted .knob{opacity:.4}
 /* ---- control column */
-.ctrl{display:flex;flex-direction:column;align-items:center;justify-content:space-between;gap:12px;padding:4px 0}
+.ctrl{display:flex;flex-direction:column;align-items:center;justify-content:space-between;gap:8px;padding:2px 0}
 .plate{width:100%;text-align:center;font-size:9.5px;letter-spacing:.2em;color:var(--ink2);text-transform:uppercase;border-bottom:1.5px dashed var(--ink3);padding-bottom:6px}
 .lbl{font-size:9.5px;letter-spacing:.18em;text-transform:uppercase;color:var(--ink2);text-align:center}
-.knob{width:104px;height:104px;position:relative;cursor:ns-resize;touch-action:none;user-select:none}
+.knob{width:92px;height:92px;position:relative;cursor:ns-resize;touch-action:none;user-select:none}
 .knob svg{width:100%;height:100%;display:block}
 .knob .val{position:absolute;left:0;right:0;bottom:-2px;text-align:center;font-size:11px;color:var(--ink);font-family:ui-monospace,Menlo,monospace}
 .round{width:64px;height:64px;border-radius:50%;border:1.5px solid var(--ink);background:var(--card);color:var(--ink);display:grid;place-items:center;cursor:pointer;transition:.15s;box-shadow:inset 0 0 0 4px var(--card),inset 0 0 0 5.5px var(--ink3)}
@@ -694,6 +739,7 @@ LISTEN_HTML = r"""<!doctype html><html><head><meta charset=utf-8><title>CCAST</t
     <canvas id=grat></canvas><canvas id=beam></canvas>
     <div class="ovl tl"><span class=dot id=dot></span><span id=st>Off air</span></div>
     <div class="ovl tr" id=s1></div>
+    <div class="ovl tc" id=tc></div>
     <div class="ovl bl hide" id=now></div>
     <div class="ovl br" id=s2>2.5 ms/div</div>
    </div></div>
@@ -715,6 +761,11 @@ LISTEN_HTML = r"""<!doctype html><html><head><meta charset=utf-8><title>CCAST</t
     <div class=btnlbl><button class=round id=btn title="Listen / stop"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M12 3v9"/><path d="M6.3 6.6a8 8 0 1 0 11.4 0"/></svg></button><span class=lbl>listen</span></div>
     <div class=btnlbl><button class="round mute" id=lmute title="Mute on this computer only"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 9v6h4l5 4V5L8 9H4z"/><path d="M16 9l5 6M21 9l-5 6"/></svg></button><span class=lbl>mute</span></div>
    </div>
+   <div class=pair>
+    <div class=btnlbl><button class="round mute" id=clk title="Click track — follows the DAW transport"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v7"/><path d="M6 21l3-10h6l3 10z"/><path d="M12 10l5-5"/></svg></button><span class=lbl>click</span></div>
+    <div class=btnlbl><div class="knob sm" id=clkknob title="Click level"></div><span class=lbl>level</span></div>
+   </div>
+   <div class=btnlbl><div class=sw id=snd title="Click sound"><span>stick</span><span>shaker</span></div><span class=lbl>sound</span></div>
    <div class=btnlbl><div class=sw id=seg title="Jitter buffer: steady 150 ms, or as low as the network allows"><span>smooth</span><span>low lat</span></div><span class=lbl>buffer</span></div>
   </div>
  </section>
@@ -774,7 +825,7 @@ function showLive(){if(lmuted)setState('wait','Muted here','Press mute again to 
 $('#lmute').onclick=()=>{lmuted=!lmuted;ramp(master,lmuted?0:vol*vol,30);$('#lmute').classList.toggle('on',lmuted);if(connected())showLive();};
 function schedule(ms){clearTimeout(timer);timer=setTimeout(()=>{if(listening&&!connected())hello();},ms);}
 function hello(){if(!listening)return;attempt++;sig.send('host',{type:'hello'});setState('wait','Tuning in…','Looking for the studio');schedule(Math.min(15000,4000+attempt*2000));}
-function teardown(){if(pc){pc.onconnectionstatechange=null;pc.close();pc=null;}receivers=[];pending=[];lastBytes=lastT=lastJbD=lastJbN=0;clearChans();$('#lat').textContent='—';$('#s1').textContent='';renderMeta();}
+function teardown(){if(pc){pc.onconnectionstatechange=null;pc.close();pc=null;}receivers=[];pending=[];if(dc){clearInterval(dc._pinger);dc=null;}clk.line=null;clk.running=false;clk.offset=null;clk.bestRtt=Infinity;clk.seq=-1;killClicks();renderClock();lastBytes=lastT=lastJbD=lastJbN=0;clearChans();$('#lat').textContent='—';$('#s1').textContent='';renderMeta();}
 // ---------- the oscilloscope + meters on the receive bus
 (function buildScale(){const el=$('#scale');[-60,-48,-36,-24,-18,-12,-6,-3,0].forEach(db=>{const t=document.createElement('span');t.style.left=((db+60)/60*100)+'%';t.textContent=db===0?'0':db;el.append(t);});})();
 const gr=$('#grat'),gx=gr.getContext('2d'),bm=$('#beam'),bx=bm.getContext('2d');let W=0,H=0,D=1;
@@ -801,6 +852,50 @@ function draw(){
     bx.shadowBlur=0;}
   requestAnimationFrame(draw);}
 draw();
+// ---------- click track: the DAW's MIDI clock arrives via the data channel; we schedule a local click on the beat,
+// delayed by the measured stream latency so it lands on the music the student actually hears.
+const clk={on:false,sound:'stick',level:0.6,line:null,running:false,bpm:0,bpb:4,offset:null,bestRtt:Infinity,lastBeat:-1,seq:-1,nodes:[]};
+try{clk.sound=localStorage.cc_snd||'stick';clk.level=parseFloat(localStorage.cc_clk);if(isNaN(clk.level))clk.level=0.6;}catch(e){}
+const clickGain=rac.createGain();clickGain.gain.value=0;clickGain.connect(bus);
+const noiseBuf=(()=>{const b=rac.createBuffer(1,rac.sampleRate*0.3,rac.sampleRate);const d=b.getChannelData(0);for(let i=0;i<d.length;i++)d[i]=Math.random()*2-1;return b;})();
+function acTime(tPerf){const ts=rac.getOutputTimestamp?rac.getOutputTimestamp():null;if(ts&&ts.contextTime!=null)return ts.contextTime+(tPerf-ts.performanceTime)/1000;return rac.currentTime+(tPerf-performance.now())/1000;}
+function stick(t,accent){const n=rac.createBufferSource();n.buffer=noiseBuf;const bp=rac.createBiquadFilter();bp.type='bandpass';bp.frequency.value=accent?2300:1900;bp.Q.value=5;
+  const g=rac.createGain();g.gain.setValueAtTime(0.0001,t);g.gain.exponentialRampToValueAtTime(accent?1.0:0.7,t+0.0015);g.gain.exponentialRampToValueAtTime(0.0001,t+0.04);
+  n.connect(bp).connect(g).connect(clickGain);n.start(t);n.stop(t+0.06);
+  const o=rac.createOscillator();o.frequency.setValueAtTime(accent?920:780,t);o.frequency.exponentialRampToValueAtTime(accent?700:600,t+0.03);const og=rac.createGain();og.gain.setValueAtTime(0.0001,t);og.gain.exponentialRampToValueAtTime(0.35,t+0.001);og.gain.exponentialRampToValueAtTime(0.0001,t+0.03);
+  o.connect(og).connect(clickGain);o.start(t);o.stop(t+0.05);clk.nodes.push(n,o);}
+function shaker(t,accent){const n=rac.createBufferSource();n.buffer=noiseBuf;const hp=rac.createBiquadFilter();hp.type='highpass';hp.frequency.value=3200;const bp=rac.createBiquadFilter();bp.type='bandpass';bp.frequency.value=accent?7500:6200;bp.Q.value=0.9;
+  const g=rac.createGain();g.gain.setValueAtTime(0.0001,t);g.gain.exponentialRampToValueAtTime(accent?0.9:0.6,t+0.008);g.gain.exponentialRampToValueAtTime(0.0001,t+(accent?0.12:0.08));
+  n.connect(hp).connect(bp).connect(g).connect(clickGain);n.start(t);n.stop(t+0.15);clk.nodes.push(n);}
+function killClicks(){for(const n of clk.nodes){try{n.stop();}catch(e){}}clk.nodes=[];}
+let latSec=0.06;   // running estimate of stream latency (s), updated by the stats loop
+function beatAt(tLocal){const l=clk.line;return l.beat+(tLocal-l.tLocal)/60000*l.bpm;}
+setInterval(()=>{if(!(clk.on&&clk.running&&clk.line&&clk.offset!=null&&rac.state==='running'))return;
+  const now=performance.now(),horizon=now+220,per=60000/clk.line.bpm;
+  let n=Math.max(clk.lastBeat+1,Math.ceil(beatAt(now-latSec*1000-30)));
+  for(;;){const tBeat=clk.line.tLocal+(n-clk.line.beat)*per+latSec*1000;if(tBeat>horizon)break;
+    if(tBeat>now-20){const at=Math.max(acTime(tBeat),rac.currentTime+0.005);const accent=((n%clk.bpb)+clk.bpb)%clk.bpb===0;(clk.sound==='shaker'?shaker:stick)(at,accent);}
+    clk.lastBeat=n;n++;if(n-clk.lastBeat>64)break;}
+  if(clk.nodes.length>40)clk.nodes.splice(0,clk.nodes.length-40);},40);
+function onClockMsg(m){if(m.seq<=clk.seq)return;clk.seq=m.seq;const wasRunning=clk.running;clk.running=m.running;clk.bpm=m.bpm;clk.bpb=m.bpb||4;
+  if(clk.offset!=null&&m.bpm>0){let tLocal=m.t-clk.offset;
+    if(clk.line&&wasRunning){const pred=beatAt(tLocal);const err=pred-m.beat;                       // beats we are ahead of the studio
+      if(Math.abs(err)>0.08){clk.lastBeat=Math.floor(m.beat)-1;}                                   // real jump (locate / restart): resync
+      else{tLocal-=err/m.bpm*60000*0.75;}                                                         // small drift: take only a quarter of the correction (phase-lock)
+    }else clk.lastBeat=Math.floor(m.beat)-1;
+    clk.line={beat:m.beat,tLocal,bpm:m.bpm};}
+  if(!m.running){killClicks();clk.line=clk.line;}renderClock();}
+let dc=null;function wireDC(ch){dc=ch;ch.onmessage=e=>{try{const m=JSON.parse(e.data);
+    if(m.type==='pong'){const t3=performance.now(),rtt=t3-m.t1,off=m.t2-(m.t1+t3)/2;if(rtt<=clk.bestRtt*1.5||clk.offset==null){clk.offset=clk.offset==null?off:clk.offset*0.7+off*0.3;}clk.bestRtt=Math.min(clk.bestRtt*1.02,rtt);}
+    else if(m.type==='clock')onClockMsg(m);}catch(err){}};
+  const ping=()=>{if(ch.readyState==='open')try{ch.send(JSON.stringify({type:'ping',t1:performance.now()}));}catch(e){}};ch.onopen=()=>{ping();};setTimeout(ping,300);ch._pinger=setInterval(ping,1000);ch.onclose=()=>clearInterval(ch._pinger);}
+function renderClock(){const el=$('#tc');if(!clk.bpm){el.innerHTML='';return;}
+  let dots='';for(let i=0;i<clk.bpb;i++)dots+=`<i class="${i===0?'one':''}"></i>`;el.innerHTML=`<span>${clk.running?'▶':'■'} ${clk.bpm.toFixed(1)}</span>${dots}`;}
+setInterval(()=>{if(!clk.line||!clk.running||clk.offset==null)return;const b=Math.floor(beatAt(performance.now()-latSec*1000));const i=((b%clk.bpb)+clk.bpb)%clk.bpb;[...$('#tc').querySelectorAll('i')].forEach((d,k)=>d.classList.toggle('on',k===i));},50);
+function applyClick(){ramp(clickGain,clk.on?clk.level*clk.level*0.9:0,30);$('#clk').classList.toggle('on',clk.on);$('#snd').classList.toggle('fast',clk.sound==='shaker');if(!clk.on)killClicks();}
+$('#clk').onclick=()=>{clk.on=!clk.on;rac.resume().catch(()=>{});if(clk.on&&clk.line)clk.lastBeat=Math.floor(beatAt(performance.now()-latSec*1000));applyClick();if(clk.on&&!clk.bpm)toast('No DAW clock yet — the studio needs MIDI Clock on its IAC input');};
+$('#snd').onclick=()=>{clk.sound=clk.sound==='stick'?'shaker':'stick';try{localStorage.cc_snd=clk.sound;}catch(e){}applyClick();};
+makeKnob($('#clkknob'),clk.level,v=>{clk.level=v;try{localStorage.cc_clk=v;}catch(e){}applyClick();},true);applyClick();
 // ---------- signalling
 let stemInfo=[];
 sig.onmsg=async(from,d)=>{if(from!=='host')return;
@@ -813,6 +908,7 @@ sig.onmsg=async(from,d)=>{if(from!=='host')return;
   else if(d.type==='offer'){teardown();stemInfo=d.stems||[];pc=new RTCPeerConnection({iceServers:[]});pc.cid=d.cid;pc.hid=d.hid;
     pc.ontrack=e=>{const mid=e.transceiver.mid;const info=stemInfo.find(s=>s.mid===mid)||{id:'m'+mid,name:'Channel',kind:'ch'};receivers.push(e.receiver);applyMode();
       addChan(info,e.streams[0]);renderMixer();rac.resume().then(()=>$('#unmute').classList.remove('show')).catch(()=>$('#unmute').classList.add('show'));};
+    pc.ondatachannel=e=>wireDC(e.channel);
     pc.onicecandidate=e=>{if(e.candidate)sig.send('host',{type:'ice',cid:pc.cid,c:e.candidate});};
     pc.onconnectionstatechange=()=>{const s=pc.connectionState;
       if(s==='connected'){attempt=0;clearTimeout(timer);showLive();renderMeta();if(rac.state!=='running')$('#unmute').classList.add('show');}
@@ -841,7 +937,7 @@ setInterval(async()=>{if(!connected())return;try{const st=await pc.getStats();le
   const now=performance.now();const kbps=lastT?Math.round((bytes-lastBytes)*8/((now-lastT)/1000)/1000):0;lastBytes=bytes;lastT=now;
   const out=(rac.outputLatency||0)+(rac.baseLatency||0);   // the audible path is Web Audio: jitter buffer -> graph -> device
   // estimate: capture ≈10 ms + studio mixer ≈3 ms + 10 ms Opus frame + half the round trip + jitter buffer + this page's output latency
-  const est=jb!=null?Math.round((0.010+0.003+0.010+(rtt||0)/2+jb+out)*1000):null;
+  const est=jb!=null?Math.round((0.010+0.003+0.010+(rtt||0)/2+jb+out)*1000):null;if(est!=null){const e=est/1000;if(Math.abs(e-latSec)>0.015)latSec=e;else latSec=latSec*0.95+e*0.05;}   // click compensation: re-lock only on a real change, otherwise hold steady
   $('#lat').textContent=(est!=null?'≈ '+est+' ms end-to-end · ':'')+(jb!=null?'buffer '+Math.round(jb*1000)+' ms':'')+(rtt!=null?' · net '+Math.round(rtt*1000)+' ms':'')+(lost?' · lost '+lost:'');
   $('#s1').textContent=codec+(n>1?' × '+(n-1)+'+tb':'')+(kbps?' · '+kbps+' kb/s':'');}catch(e){}},2000);
 renderMeta();sig.run();
