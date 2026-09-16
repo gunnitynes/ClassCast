@@ -289,13 +289,93 @@ const ICON_STOP='<svg viewBox="0 0 24 24" fill="currentColor"><rect x="6" y="6" 
 const ICON_WAVE='<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round"><path d="M4 12h1M8 8v8M12 4v16M16 8v8M20 12h1"/></svg>';
 """
 
+HOST_CSS = r"""
+:root{--paper:#f7f6f2;--card:#fbfaf8;--ink:#3b2d6e;--ink2:#8e7fc4;--ink3:#c9c1e3;--grid:rgba(59,45,110,.13);--live:#2f9e6d;--warn:#b9791d;--off:#c0392b;--onair:#d7263d}
+*{box-sizing:border-box}html{color-scheme:light}
+body{margin:0;background:var(--paper);color:var(--ink);font:15px/1.45 -apple-system,BlinkMacSystemFont,"SF Pro Text",Inter,Segoe UI,Roboto,sans-serif;min-height:100vh;-webkit-font-smoothing:antialiased;position:relative;overflow-x:hidden}
+.mono{font-family:ui-monospace,"SF Mono",Menlo,Consolas,monospace}
+svg.bg{position:fixed;inset:0;width:100%;height:100%;z-index:0;pointer-events:none;opacity:.5}
+.wrap{position:relative;z-index:1;max-width:980px;margin:0 auto;padding:22px 20px 60px}
+header{display:flex;align-items:center;justify-content:space-between;gap:16px;padding:4px 4px 18px;flex-wrap:wrap}
+.station{display:flex;align-items:center;gap:14px}
+.logo{width:34px;height:34px;border-radius:9px;border:1.5px solid var(--ink);display:grid;place-items:center;color:var(--ink);background:var(--card)}
+.logo svg{width:18px;height:18px}
+.stname{font-weight:800;letter-spacing:.16em;font-size:19px;cursor:text;text-transform:uppercase}.stname:hover{color:var(--ink2)}
+.sttag{color:var(--ink2);font-size:11px;letter-spacing:.16em;text-transform:uppercase}
+.row{display:flex;gap:12px;align-items:center;flex-wrap:wrap}.row>.grow{flex:1;min-width:160px}
+.onair{padding:10px 18px;border-radius:10px;border:1.5px solid var(--ink3);color:var(--ink3);font-weight:900;letter-spacing:.22em;font-size:13px;transition:.25s;background:var(--card)}
+.onair span{display:block}
+.onair.on{border-color:var(--onair);background:var(--onair);color:#fff;box-shadow:0 0 0 4px rgba(215,38,61,.15),0 0 26px rgba(215,38,61,.35);animation:glow 2.4s ease-in-out infinite}
+.onair.muted{border-color:var(--warn);background:var(--warn);color:#fff}
+@keyframes glow{50%{box-shadow:0 0 0 4px rgba(215,38,61,.08),0 0 10px rgba(215,38,61,.2)}}
+.pill{display:inline-flex;align-items:center;gap:8px;padding:8px 14px;border-radius:999px;border:1.5px solid var(--ink);color:var(--ink2);font-size:11px;letter-spacing:.14em;text-transform:uppercase;white-space:nowrap;background:var(--card)}
+.pill.count b{color:var(--ink);font-size:18px;font-variant-numeric:tabular-nums;letter-spacing:0}
+button{font:inherit;cursor:pointer;border:1.5px solid var(--ink);background:transparent;color:var(--ink);border-radius:12px;padding:12px 16px;font-weight:700;letter-spacing:.1em;text-transform:uppercase;font-size:12px;transition:.15s;display:inline-flex;align-items:center;justify-content:center;gap:10px}
+button:hover{background:rgba(59,45,110,.06)}button:active{transform:translateY(1px)}button:disabled{opacity:.35;cursor:default}
+button.ghost{color:var(--ink2)}button.icon{padding:11px 14px}
+.card{background:var(--card);border:1.5px solid var(--ink);border-radius:18px;padding:22px 24px;margin-bottom:18px;box-shadow:6px 6px 0 -1px var(--paper),6px 6px 0 0 var(--ink3)}
+label,.lbl{display:block;font-size:10.5px;letter-spacing:.16em;text-transform:uppercase;color:var(--ink2);margin-bottom:6px}
+select,input[type=text]{font:inherit;width:100%;padding:12px 14px;border-radius:10px;background:var(--paper);color:var(--ink);border:1.5px solid var(--ink);appearance:none}
+select{background-image:linear-gradient(45deg,transparent 50%,var(--ink) 50%),linear-gradient(135deg,var(--ink) 50%,transparent 50%);background-position:calc(100% - 20px) 50%,calc(100% - 14px) 50%;background-size:6px 6px;background-repeat:no-repeat}
+.hint{color:var(--ink2);font-size:13px;margin-top:10px}.hint b{color:var(--ink)}
+/* address */
+.sharegrid{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:28px;align-items:center}.sharegrid>div:first-child{min-width:0}
+@media(max-width:760px){.sharegrid{grid-template-columns:1fr}}
+.url{font-size:48px;font-weight:800;letter-spacing:-.02em;line-height:1.1;white-space:nowrap;margin:4px 0 12px;color:var(--ink2)}.url b{color:var(--ink)}
+.alt{color:var(--ink2);font-size:13px}.alt code{color:var(--ink)}
+.qr{background:#fff;padding:12px;border-radius:14px;line-height:0;border:1.5px solid var(--ink);justify-self:end}
+.qr img,.qr canvas{display:block;width:230px;height:230px}
+/* input + metering */
+.srcrow{display:flex;gap:10px;align-items:flex-end}.srcrow .grow{flex:1;min-width:0}
+.devinfo{color:var(--ink2);font-size:13px;margin-top:10px;min-height:20px}.devinfo b{color:var(--ink)}
+.vu{margin:18px 0 22px;padding:14px 16px 12px;border-radius:14px;background:var(--paper);border:1.5px solid var(--ink)}
+.bezel{position:relative;border:1.5px solid var(--ink);border-radius:8px;overflow:hidden;background:linear-gradient(180deg,#fdfcfa,#f4f2ee);margin-bottom:14px}
+canvas#scope{display:block;width:100%;height:150px}
+.scale{position:relative;height:14px;margin:0 64px 6px 30px;font-size:10px;color:var(--ink2);font-family:ui-monospace,Menlo,monospace}
+.scale span{position:absolute;transform:translateX(-50%)}
+.ch{display:grid;grid-template-columns:18px 1fr 52px;gap:12px;align-items:center;margin:6px 0}
+.ch .lbl{margin:0;text-align:right;font-weight:700;color:var(--ink2)}
+.bar{height:14px;border:1.5px solid var(--ink);border-radius:7px;position:relative;overflow:hidden;background:repeating-linear-gradient(90deg,transparent 0 9.6%,var(--grid) 9.6% 10%),linear-gradient(90deg,transparent 90%,rgba(192,57,43,.10) 90%)}
+.bar i{position:absolute;inset:0;width:0;background:linear-gradient(90deg,var(--ink2),var(--ink) 80%,var(--warn) 92%,var(--off) 98%);transition:width .04s linear}
+.bar b{position:absolute;top:0;bottom:0;width:2px;background:var(--ink);left:0;transition:left .1s}
+.peak{font-size:12px;text-align:right;font-variant-numeric:tabular-nums}
+.vufoot{display:flex;justify-content:space-between;align-items:center;margin-top:8px;gap:12px}
+.clip{padding:4px 10px;border-radius:7px;font-size:10px;letter-spacing:.14em;border:1.5px solid var(--ink3);color:var(--ink3)}
+.clip.on{background:var(--off);color:#fff;border-color:var(--off);animation:blink .6s steps(2) infinite}
+@keyframes blink{50%{filter:brightness(.7)}}
+/* go live + desk */
+.hero{width:100%;padding:20px 24px;border-radius:14px;background:var(--ink);color:#fff;border-color:var(--ink);text-transform:none;letter-spacing:0;justify-content:center;gap:16px}
+.hero:hover{background:#2e2257}.hero:disabled{background:transparent;color:var(--ink);opacity:.4}
+.hero svg{width:28px;height:28px;flex:none}.hero span{display:flex;flex-direction:column;line-height:1.15;text-align:left}
+.hero b{font-size:24px;letter-spacing:.06em;text-transform:uppercase}.hero small{font-size:13px;font-weight:500;opacity:.8}
+.desk{display:grid;grid-template-columns:1.4fr 1fr 1fr;gap:12px}
+@media(max-width:640px){.desk{grid-template-columns:1fr}}
+.deskbtn{flex-direction:column;align-items:flex-start;gap:2px;padding:16px 18px;border-radius:14px;text-align:left;min-height:92px;position:relative;text-transform:none;letter-spacing:0}
+.deskbtn .k{position:absolute;right:14px;top:12px;font-size:16px;opacity:.55}.deskbtn span:not(.k){font-size:18px;font-weight:800;letter-spacing:.06em;text-transform:uppercase}.deskbtn small{color:var(--ink2);font-weight:500;font-size:12px}
+.deskbtn.talk.on{background:var(--live);border-color:var(--live);color:#fff}.deskbtn.talk.on small{color:#e8fff2}
+.deskbtn.mute.on{background:var(--warn);border-color:var(--warn);color:#fff}.deskbtn.mute.on small{color:#fff3df}
+.deskbtn.stop{border-color:var(--off);color:var(--off)}.deskbtn.stop small{color:var(--off);opacity:.8}.deskbtn.stop:hover{background:var(--off);color:#fff}.deskbtn.stop:hover small{color:#fff}
+.err{display:none;margin-top:14px;padding:12px 14px;border-radius:10px;border:1.5px solid var(--off);color:var(--off);font-size:13px;background:rgba(192,57,43,.05)}
+.programme{margin-top:22px;padding-top:18px;border-top:1.5px dashed var(--ink3)}.programme input{flex:1}
+.toast{position:fixed;left:50%;bottom:26px;transform:translateX(-50%) translateY(20px);opacity:0;background:var(--ink);color:#fff;padding:12px 18px;border-radius:12px;transition:.25s;pointer-events:none;font-weight:600;z-index:9}
+.toast.show{opacity:1;transform:translateX(-50%)}
+/* projector view: URL + QR only, huge */
+body.projector .card:not(.share),body.projector header .controls,body.projector .share .row,body.projector .share .hint{display:none}
+body.projector .wrap{max-width:none;padding:40px 5vw}body.projector .share{padding:48px}
+body.projector .sharegrid{grid-template-columns:1fr;gap:28px;text-align:center}
+body.projector .sharegrid>div:first-child{order:2}body.projector .qr{order:1;justify-self:center}
+body.projector .qr img,body.projector .qr canvas{width:min(48vh,560px);height:min(48vh,560px)}
+body.projector .url{margin:6px 0 10px}body.projector .alt{font-size:20px}body.projector .stname{font-size:28px}
+"""
+
 HOST_HTML = r"""<!doctype html><html><head><meta charset=utf-8><title>CCAST · Studio</title>
-<meta name=viewport content="width=device-width,initial-scale=1"><style>%CSS%</style></head><body>
+<meta name=viewport content="width=device-width,initial-scale=1"><style>%HOST_CSS%</style></head><body>
+%BG%
 <div class="wrap host">
 <header class=stationbar>
  <div class=station>
   <span class=logo>%ICON%</span>
-  <div><div class=stname id=stname title="Click to rename">CCAST</div><div class=sttag id=sttag>studio</div></div>
+  <div><div class=stname id=stname title="Click to rename">CCAST</div><div class=sttag id=sttag>studio · ch 1</div></div>
  </div>
  <div class="row controls">
   <div class=onair id=onair><span>ON AIR</span></div>
@@ -325,6 +405,7 @@ HOST_HTML = r"""<!doctype html><html><head><meta charset=utf-8><title>CCAST · S
  <div class=devinfo id=devinfo>Choose the device that carries your mix. Chrome captures its <b>channels 1–2</b>.</div>
 
  <div class=vu>
+  <div class=bezel><canvas id=scope></canvas></div>
   <div class=scale id=scale></div>
   <div class=ch><span class=lbl>L</span><div class="bar pro" id=mL><i></i><b></b></div><span class="peak mono" id=pL>−∞</span></div>
   <div class=ch><span class=lbl>R</span><div class="bar pro" id=mR><i></i><b></b></div><span class="peak mono" id=pR>−∞</span></div>
@@ -401,17 +482,25 @@ renderMeta();
   const split=ac.createChannelSplitter(2);const tap=ac.createGain();tap.channelCount=2;tap.channelCountMode='explicit';   // meter what is sent: a mono source is up-mixed to both ears
   progGain.connect(tap);micGain.connect(tap);tap.connect(split);
   const an=[0,1].map(i=>{const a=ac.createAnalyser();a.fftSize=2048;split.connect(a,i);return a;});
-  const buf=new Float32Array(2048);const bars=[$('#mL'),$('#mR')],nums=[$('#pL'),$('#pR')];const hold=[-99,-99],holdT=[0,0];let quiet=60;
+  const buf=new Float32Array(2048),bufs=[new Float32Array(2048),new Float32Array(2048)];const bars=[$('#mL'),$('#mR')],nums=[$('#pL'),$('#pR')];const hold=[-99,-99],holdT=[0,0];let quiet=60;
   const pct=db=>Math.max(0,Math.min(100,(db+60)/60*100));
+  const cv=$('#scope'),cx=cv.getContext('2d');
+  function scope(){const d=devicePixelRatio||1,r=cv.getBoundingClientRect();if(cv.width!==Math.round(r.width*d))cv.width=Math.round(r.width*d);if(cv.height!==Math.round(r.height*d))cv.height=Math.round(r.height*d);
+    const W=cv.width,H=cv.height;cx.clearRect(0,0,W,H);cx.lineWidth=d;cx.strokeStyle='rgba(59,45,110,.14)';cx.setLineDash([3*d,5*d]);
+    for(let i=1;i<10;i++){const x=W*i/10;cx.beginPath();cx.moveTo(x,0);cx.lineTo(x,H);cx.stroke();}for(let i=1;i<4;i++){const y=H*i/4;cx.beginPath();cx.moveTo(0,y);cx.lineTo(W,y);cx.stroke();}
+    cx.setLineDash([]);cx.strokeStyle='rgba(59,45,110,.3)';cx.beginPath();cx.moveTo(0,H/2);cx.lineTo(W,H/2);cx.stroke();
+    if(!program||ac.state!=='running')return;const L=bufs[0],R=bufs[1];let start=0;for(let k=1;k<680;k++){if(L[k-1]<0&&L[k]>=0){start=start=k;break;}}
+    const span=1200,amp=H*0.44;const trace=(b,c,w)=>{cx.strokeStyle=c;cx.lineWidth=w*d;cx.beginPath();for(let k=0;k<span;k++){const x=W*k/span,y=H/2-b[start+k]*amp;k?cx.lineTo(x,y):cx.moveTo(x,y);}cx.stroke();};
+    trace(R,'rgba(142,127,196,.9)',1.1);trace(L,'#3b2d6e',1.5);}
   (function tick(){const now=performance.now();let any=false;
-    an.forEach((a,i)=>{a.getFloatTimeDomainData(buf);let sum=0,pk=0;for(let k=0;k<buf.length;k++){const v=buf[k],av=v<0?-v:v;sum+=v*v;if(av>pk)pk=av;}
+    an.forEach((a,i)=>{a.getFloatTimeDomainData(bufs[i]);const buf=bufs[i];let sum=0,pk=0;for(let k=0;k<buf.length;k++){const v=buf[k],av=v<0?-v:v;sum+=v*v;if(av>pk)pk=av;}
       const rms=20*Math.log10(Math.sqrt(sum/buf.length)+1e-9),peak=20*Math.log10(pk+1e-9);
       if(peak>=hold[i]||now-holdT[i]>1500){hold[i]=peak;holdT[i]=now;}
       bars[i].querySelector('i').style.width=pct(rms)+'%';bars[i].querySelector('b').style.left=pct(hold[i])+'%';
       nums[i].textContent=hold[i]<-90?'−∞':(hold[i]>=0?'+':'')+hold[i].toFixed(1).replace('-','−');
       if(peak>=-0.1)$('#clip').classList.add('on');if(peak>-60)any=true;});
     quiet=any?0:quiet+1;const sigNow=quiet<45;if(sigNow!==hasSignal){hasSignal=sigNow;updateGo();}
-    requestAnimationFrame(tick);})();
+    scope();requestAnimationFrame(tick);})();
 })();
 $('#clip').onclick=()=>$('#clip').classList.remove('on');
 // ---------- devices
@@ -486,7 +575,7 @@ async function setTalk(on){if(!live||on===talking)return;if(on&&!micStream&&!(aw
   addEventListener('keyup',e=>{if(e.key==='t'&&!latched&&!/input|textarea|select/i.test(e.target.tagName))setTalk(false);});})();
 function stopAll(){live=false;muted=false;talking=false;applyGains();
   for(const [,p] of peers)p.pc.close();peers.clear();render();sig.send('*',{type:'host-stopped'});broadcastMeta();
-  $('#idle').hidden=false;$('#live').hidden=true;setOnAir();$('#sttag').textContent='studio';}
+  $('#idle').hidden=false;$('#live').hidden=true;setOnAir();$('#sttag').textContent='studio · ch 1';}
 $('#stop').onclick=stopAll;
 addEventListener('pagehide',()=>{navigator.sendBeacon('/api/msg',JSON.stringify({from:'host',to:'*',data:{type:'host-stopped'}}));});
 if(!['localhost','127.0.0.1'].includes(location.hostname))showErr('Open this page as http://localhost:'+location.port+'/host — browsers only allow audio capture on localhost.');
@@ -550,14 +639,7 @@ input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;width:18px;heigh
 
 LISTEN_HTML = r"""<!doctype html><html><head><meta charset=utf-8><title>CCAST</title>
 <meta name=viewport content="width=device-width,initial-scale=1"><style>%LISTEN_CSS%</style></head><body>
-<svg class=bg viewBox="0 0 1000 1000" preserveAspectRatio="xMidYMid slice" fill="none" stroke="#3b2d6e" stroke-width="1">
- <path d="M-50 720 L1050 180" opacity=".35"/><path d="M-50 900 L1050 420" opacity=".2"/>
- <path d="M60 640 C130 560,160 560,220 640 S320 720,380 640" opacity=".45"/>
- <path d="M620 300 C680 220,720 220,780 300 S880 380,940 300" opacity=".3" stroke-dasharray="4 5"/>
- <path d="M700 820 C740 760,770 760,810 820 S880 880,920 820" opacity=".3"/>
- <circle cx="220" cy="640" r="4" fill="#f7f6f2" opacity=".6"/><circle cx="780" cy="300" r="4" fill="#f7f6f2" opacity=".6"/><circle cx="470" cy="452" r="4" fill="#f7f6f2" opacity=".6"/>
- <path d="M300 200 V320" stroke-dasharray="3 5" opacity=".4"/><path d="M860 560 V700" stroke-dasharray="3 5" opacity=".4"/>
-</svg>
+%BG%
 <main class=rx>
  <header class=rxhead>
   <div class=title><span class=name id=station>CCAST</span><span class=sub>receiver · ch 1</span></div>
@@ -687,7 +769,15 @@ renderMeta();sig.run();
 ICON = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round"><path d="M4 12h1M8 8v8M12 4v16M16 8v8M20 12h1"/></svg>'
 PLAY = '<svg viewBox="0 0 24 24" width="18" height="18" fill="currentColor" style="vertical-align:-3px"><path d="M8 5v14l11-7z"/></svg>'
 STOP = '<svg viewBox="0 0 24 24" width="16" height="16" fill="currentColor" style="vertical-align:-2px"><rect x="6" y="6" width="12" height="12" rx="2"/></svg>'
-for _k, _v in (("%CSS%", CSS), ("%LISTEN_CSS%", LISTEN_CSS), ("%JS%", JS_COMMON), ("%ICON%", ICON), ("%PLAY%", PLAY), ("%STOP%", STOP)):
+BG = r"""<svg class=bg viewBox="0 0 1000 1000" preserveAspectRatio="xMidYMid slice" fill="none" stroke="#3b2d6e" stroke-width="1">
+ <path d="M-50 720 L1050 180" opacity=".35"/><path d="M-50 900 L1050 420" opacity=".2"/>
+ <path d="M60 640 C130 560,160 560,220 640 S320 720,380 640" opacity=".45"/>
+ <path d="M620 300 C680 220,720 220,780 300 S880 380,940 300" opacity=".3" stroke-dasharray="4 5"/>
+ <path d="M700 820 C740 760,770 760,810 820 S880 880,920 820" opacity=".3"/>
+ <circle cx="220" cy="640" r="4" fill="#f7f6f2" opacity=".6"/><circle cx="780" cy="300" r="4" fill="#f7f6f2" opacity=".6"/><circle cx="470" cy="452" r="4" fill="#f7f6f2" opacity=".6"/>
+ <path d="M300 200 V320" stroke-dasharray="3 5" opacity=".4"/><path d="M860 560 V700" stroke-dasharray="3 5" opacity=".4"/>
+</svg>"""
+for _k, _v in (("%CSS%", CSS), ("%HOST_CSS%", HOST_CSS), ("%LISTEN_CSS%", LISTEN_CSS), ("%BG%", BG), ("%JS%", JS_COMMON), ("%ICON%", ICON), ("%PLAY%", PLAY), ("%STOP%", STOP)):
     HOST_HTML = HOST_HTML.replace(_k, _v); LISTEN_HTML = LISTEN_HTML.replace(_k, _v)
 
 try:
