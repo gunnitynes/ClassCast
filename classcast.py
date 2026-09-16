@@ -735,7 +735,7 @@ svg.bg{position:fixed;inset:0;width:100%;height:100%;z-index:0;pointer-events:no
 .vdot{display:inline-block;width:12px;height:12px;border-radius:50%;border:1.5px solid var(--ink);vertical-align:-2px;margin-right:8px;background:transparent;transition:background .08s,box-shadow .08s}
 .vdot.hit{background:var(--ink)}.vdot.one{background:var(--live);border-color:var(--live);box-shadow:0 0 0 4px rgba(47,158,109,.25)}
 /* ---- visual metronome (fullscreen) */
-.vm{position:fixed;inset:0;z-index:20;background:var(--paper);color:var(--ink);display:flex;flex-direction:column;user-select:none}
+.vm{position:fixed;inset:0;z-index:20;background:var(--paper);color:var(--ink);display:flex;flex-direction:column;user-select:none}.vm[hidden]{display:none}
 .vmflash{position:absolute;inset:0;background:var(--ink);opacity:0;pointer-events:none}
 .vmtop{position:relative;z-index:2;display:flex;justify-content:space-between;align-items:center;padding:16px 18px}
 .vmseg{display:flex;border:1.5px solid var(--ink);border-radius:12px;overflow:hidden;background:var(--card)}
