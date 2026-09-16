@@ -1,20 +1,20 @@
 #!/bin/bash
-# ClassCast launcher. Click once to start (opens the host page in Chrome);
+# CCAST launcher. Click once to start (opens the host page in Chrome);
 # click again while running to open the host page or stop the server.
-DIR="$(cd "$(dirname "$0")/../../.." && pwd)"          # the folder holding ClassCast.app
+DIR="$(cd "$(dirname "$0")/../../.." && pwd)"          # the folder holding CCAST.app
 [ -f "$DIR/classcast.py" ] || DIR="$HOME/ClassCast"      # app moved elsewhere (e.g. /Applications)
 PIDF="$DIR/.classcast.pid"; PORTF="$DIR/.classcast.port"
-say() { osascript -e "display notification \"$1\" with title \"ClassCast\""; }
-fail() { osascript -e "display alert \"ClassCast\" message \"$1\" as critical"; exit 1; }
-[ -f "$DIR/classcast.py" ] || fail "Cannot find classcast.py. Keep ClassCast.app in the ClassCast folder (or the folder at ~/ClassCast)."
+say() { osascript -e "display notification \"$1\" with title \"CCAST\""; }
+fail() { osascript -e "display alert \"CCAST\" message \"$1\" as critical"; exit 1; }
+[ -f "$DIR/classcast.py" ] || fail "Cannot find classcast.py. Keep CCAST.app in the ClassCast folder (or the folder at ~/ClassCast)."
 
 # Running? The pid must exist AND still be our server (pids get reused after a reboot).
 running() { local pid; pid="$(cat "$PIDF" 2>/dev/null)"; [ -n "$pid" ] && ps -p "$pid" -o command= 2>/dev/null | grep -q "classcast.py"; }
 
 if running; then
   PORT="$(cat "$PORTF" 2>/dev/null || echo 8080)"
-  CHOICE=$(osascript -e 'display dialog "ClassCast is running." buttons {"Stop ClassCast", "Open host page"} default button "Open host page" with title "ClassCast" with icon POSIX file "'"$DIR"'/ClassCast.app/Contents/Resources/ClassCast.icns"' -e 'button returned of result' 2>/dev/null)
-  if [ "$CHOICE" = "Stop ClassCast" ]; then
+  CHOICE=$(osascript -e 'display dialog "CCAST is running." buttons {"Stop CCAST", "Open host page"} default button "Open host page" with title "CCAST" with icon POSIX file "'"$DIR"'/CCAST.app/Contents/Resources/CCAST.icns"' -e 'button returned of result' 2>/dev/null)
+  if [ "$CHOICE" = "Stop CCAST" ]; then
     kill "$(cat "$PIDF")" 2>/dev/null; sleep 0.5; rm -f "$PIDF" "$PORTF"; say "Stopped."
   elif [ -n "$CHOICE" ]; then
     open -a "Google Chrome" "http://localhost:$PORT/host" 2>/dev/null || open "http://localhost:$PORT/host"
@@ -37,5 +37,5 @@ for i in 1 2 3 4 5 6 7 8 9 10; do sleep 0.5; running && break; done
 if running; then
   say "Live. Students: http://$(ipconfig getifaddr en0 2>/dev/null || echo "<this Mac>"):$(cat "$PORTF" 2>/dev/null || echo 8080)"
 else
-  fail "ClassCast could not start. See $DIR/classcast.log"
+  fail "CCAST could not start. See $DIR/classcast.log"
 fi

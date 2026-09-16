@@ -1,11 +1,11 @@
-# ClassCast — stream your session to the students' headphones
+# CCAST — stream your session to the students' headphones
 
 Nothing to install, for you or for them. One Python file (already on this Mac),
 a Dock app, and a QR library served locally. Works offline. Audio only:
 stereo, 48 kHz, Opus 320 kb/s, no speech processing, ~100 ms.
 
 ## Every class
-1. Click **ClassCast** in the Dock. The server starts silently and Chrome opens
+1. Click **CCAST** in the Dock. The server starts silently and Chrome opens
    the studio page. (First time: macOS may ask to allow Python to accept
    incoming connections → Allow; Chrome asks for the microphone once → Allow —
    that is how it reads your interface.)
@@ -26,14 +26,14 @@ The desk while on air:
 - **Stop** — off air; the input stays armed and metering.
 - **Now playing** — a line every receiver displays (topic, a reference track…).
   Later this can become a playlist / reference queue for the students.
-- Click the station name to rename it; it shows on every receiver.
+- Click the name **CCAST** in the header to rename it; it shows on every receiver.
+- Students have their own **🔇 mute** (local only) next to Listen.
 
 Students choose **Smooth** (steady 150 ms buffer, never warbles — default) or
 **Low latency** (~50 ms). Their page reconnects by itself after anything.
 
 ## Getting your mix onto channels 1–2
-Chrome captures **only channels 1–2** of the device you pick. Three ways
-(also listed on the host page under *Routing recipes*):
+Chrome captures **only channels 1–2** of the device you pick. Three ways:
 
 **A · Pro Tools Audio Bridge 2‑A** (virtual, already installed — no cables,
 independent stream mix). Audio MIDI Setup → + → Create Aggregate Device: tick
@@ -48,7 +48,7 @@ cable → Mic/Line 1–2 at Line, unity. Pick "Universal Audio Thunderbolt".
 onto inputs 1–2 in the control app, pick the interface.
 
 ## If someone cannot connect
-- Is the server running? Click the Dock icon: "ClassCast is running" = yes.
+- Is the server running? Click the Dock icon: "CCAST is running" = yes.
 - Same Wi-Fi as this Mac; type `http://` if entering the address by hand.
 - School networks may isolate clients — test in the room once. Workaround:
   a travel router / phone hotspot everyone joins, or ask IT.
@@ -58,6 +58,6 @@ onto inputs 1–2 in the control app, pick the interface.
   their volume slider.
 
 ## Files
-- `ClassCast.app` — launcher (keep it here, or move it and leave the folder at ~/ClassCast)
+- `CCAST.app` — launcher (keep it here, or move it and leave the folder at ~/ClassCast)
 - `classcast.py` — server + both pages · `qrcode.min.js` — QR library (MIT)
 - `classcast.log` — who joined/left, errors · Terminal: `python3 ~/ClassCast/classcast.py`

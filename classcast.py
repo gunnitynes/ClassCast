@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-ClassCast — broadcast this Mac's audio to every browser on the local network.
+CCAST (ClassCast) — broadcast this Mac's audio to every browser on the local network.
 
 Zero dependencies: Python 3 standard library only.
   Teacher:   http://localhost:8080/host   (opens in Chrome automatically)
@@ -226,6 +226,8 @@ body.projector .url{margin:6px 0 10px}body.projector .alt{font-size:20px}
 .rtop{display:flex;align-items:center;gap:10px;font-weight:800;font-size:18px}.rtop .grow{flex:1}.rfreq{color:var(--mute);font-size:13px;font-weight:600}
 .rnow{margin-top:10px;font-size:22px;font-weight:700;letter-spacing:-.01em;color:var(--live);min-height:30px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 /* listener */
+.btns{display:grid;grid-template-columns:1fr 84px;gap:10px}
+.big.lmute{background:#222736;color:var(--fg);font-size:24px;padding:0}.big.lmute.on{background:var(--wait);color:#3a2a10}
 .listen{max-width:560px;margin:0 auto;padding:28px 20px 60px}
 .big{width:100%;font-size:26px;padding:26px;border-radius:22px;background:var(--live);color:var(--ink);display:flex;align-items:center;justify-content:center;gap:14px}
 .big.on{background:#222736;color:var(--fg)}
@@ -287,13 +289,13 @@ const ICON_STOP='<svg viewBox="0 0 24 24" fill="currentColor"><rect x="6" y="6" 
 const ICON_WAVE='<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round"><path d="M4 12h1M8 8v8M12 4v16M16 8v8M20 12h1"/></svg>';
 """
 
-HOST_HTML = r"""<!doctype html><html><head><meta charset=utf-8><title>ClassCast · Studio</title>
+HOST_HTML = r"""<!doctype html><html><head><meta charset=utf-8><title>CCAST · Studio</title>
 <meta name=viewport content="width=device-width,initial-scale=1"><style>%CSS%</style></head><body>
 <div class="wrap host">
 <header class=stationbar>
  <div class=station>
   <span class=logo>%ICON%</span>
-  <div><div class=stname id=stname title="Click to rename the station">CLASSCAST RADIO</div><div class=sttag id=sttag>studio desk · <span id=freq class=mono>—</span></div></div>
+  <div><div class=stname id=stname title="Click to rename">CCAST</div><div class=sttag id=sttag>studio</div></div>
  </div>
  <div class="row controls">
   <div class=onair id=onair><span>ON AIR</span></div>
@@ -345,23 +347,9 @@ HOST_HTML = r"""<!doctype html><html><head><meta charset=utf-8><title>ClassCast 
  <div class=programme>
   <label>Now playing · shown on every receiver</label>
   <div class=row><input type=text id=now class=grow maxlength=90 placeholder="e.g. Sidechain compression demo · or a reference: Burial — Archangel"><button id=sendnow>Update</button><button class=ghost id=clearnow title="Clear">×</button></div>
-  <div class=hint>Later this line can become a playlist or a reference queue — the receivers already display whatever the studio sends.</div>
+
  </div>
 
- <details class=other><summary>Routing recipes for this Mac</summary>
-  <div class=recipes>
-   <div class=recipe><h4>A · Pro Tools Audio Bridge 2‑A <span class=tag>no cables · independent stream mix</span></h4>
-    <p>A virtual 2‑in/2‑out device already installed here. Whatever you send to its outputs appears on its inputs.</p>
-    <ol><li><b>Audio MIDI Setup</b> → <b>+</b> → <em>Create Aggregate Device</em>: tick <em>Universal Audio Thunderbolt</em> (clock source) and <em>Pro Tools Audio Bridge 2‑A</em>.</li>
-    <li>In your DAW choose the aggregate as the audio device. Your master keeps going to the Apollo outputs as before.</li>
-    <li>Add a send / cue out / second master routed to the Bridge's two extra outputs.</li>
-    <li>Here, pick <em>Pro Tools Audio Bridge 2‑A</em>. What you send is what they hear — mute the room, keep streaming.</li></ol></div>
-   <div class=recipe><h4>B · Physical loopback on the Apollo <span class=tag>one cable pair · zero software</span></h4>
-    <p>Route your mix (or a cue) to a spare line-out pair, cable it into <em>Mic/Line 1–2</em> set to Line at unity. Pick <em>Universal Audio Thunderbolt</em> here.</p></div>
-   <div class=recipe><h4>C · Interfaces with a Loopback feature <span class=tag>Scarlett · EVO · MOTU · RME</span></h4>
-    <p>Enable Loopback onto inputs 1–2 in the interface's control app, then pick the interface here.</p></div>
-  </div>
- </details>
 </section>
 </div>
 <div class=toast id=toast></div>
@@ -371,7 +359,8 @@ const peers=new Map();           // id -> {pc,cid,pending:[]}
 const HID=rnd();                 // this host page instance; students ignore host-ready from a host they're already connected to
 const sig=new Signal('host');
 let program=null,micStream=null,live=false,muted=false,talking=false,stopMeter=null,hasSignal=false,t0=0;
-const meta={station:'CLASSCAST RADIO',now:''};try{Object.assign(meta,JSON.parse(localStorage.cc_meta||'{}'));}catch(e){}
+const meta={station:'CCAST',now:''};try{Object.assign(meta,JSON.parse(localStorage.cc_meta||'{}'));}catch(e){}
+if(/classcast radio/i.test(meta.station))meta.station='CCAST';   // migrate the old default
 // ---------- the desk: a tiny Web Audio mixer. programme -> gain, mic -> gain, both -> one stereo track that is what students receive.
 const AC=window.AudioContext||window.webkitAudioContext;const ac=new AC({sampleRate:48000,latencyHint:'interactive'});
 const progGain=ac.createGain(),micGain=ac.createGain(),dest=ac.createMediaStreamDestination();
@@ -387,7 +376,7 @@ function fitUrl(){const el=$('#url');const chars=(el.textContent||'').length||24
 addEventListener('resize',fitUrl);
 fetch('/api/info').then(r=>r.json()).then(i=>{
   const u=new URL(i.url);$('#url').innerHTML=`<span style="color:var(--dim)">http://</span><b>${u.hostname}</b><span style="color:var(--dim)">:${u.port}</span>`;
-  $('#url').dataset.url=i.url;fitUrl();$('#freq').textContent=u.hostname.split('.').slice(-1)[0]+'.'+u.port.slice(0,2)+' FM';
+  $('#url').dataset.url=i.url;fitUrl();
   if(window.QRCode)new QRCode($('#qr'),{text:i.url,width:480,height:480,correctLevel:QRCode.CorrectLevel.M});
   if(i.alts.length)$('#alts').innerHTML='Also: '+i.alts.map(a=>`<code>http://${a}:${i.port}</code>`).join(' · ');
   requestAnimationFrame(fitUrl);setTimeout(fitUrl,300);
@@ -396,8 +385,8 @@ if(window.ResizeObserver)new ResizeObserver(()=>fitUrl()).observe($('.sharegrid'
 $('#copy').onclick=async()=>{try{await navigator.clipboard.writeText($('#url').dataset.url);toast('Link copied');}catch(e){toast($('#url').dataset.url);}};
 $('#proj').onclick=()=>{document.body.classList.toggle('projector');setTimeout(fitUrl,30);};
 addEventListener('keydown',e=>{if(e.key==='Escape'){document.body.classList.remove('projector');setTimeout(fitUrl,30);}});
-$('#quit').onclick=async()=>{if(!confirm('Quit ClassCast? Students will be disconnected.'))return;stopAll();await fetch('/api/quit').catch(()=>{});
-  document.body.innerHTML='<div class=wrap style="text-align:center;padding-top:20vh"><div class=brand style="justify-content:center;margin-bottom:18px"><span class=logo>'+ICON_WAVE+'</span>ClassCast</div><p style="color:var(--dim)">ClassCast has quit. You can close this tab.</p></div>';};
+$('#quit').onclick=async()=>{if(!confirm('Quit CCAST? Students will be disconnected.'))return;stopAll();await fetch('/api/quit').catch(()=>{});
+  document.body.innerHTML='<div class=wrap style="text-align:center;padding-top:20vh"><div class=brand style="justify-content:center;margin-bottom:18px"><span class=logo>'+ICON_WAVE+'</span>CCAST</div><p style="color:var(--dim)">CCAST has quit. You can close this tab.</p></div>';};
 function saveMeta(){try{localStorage.cc_meta=JSON.stringify(meta);}catch(e){}}
 function renderMeta(){$('#stname').textContent=meta.station;$('#now').value=meta.now;document.title=meta.station+' · Studio';}
 function broadcastMeta(to){sig.send(to||'*',{type:'meta',station:meta.station,now:meta.now,live,muted,talking});}
@@ -459,7 +448,7 @@ navigator.mediaDevices.ondevicechange=async()=>{await listDevices();if(!program)
 function setOnAir(){$('#onair').classList.toggle('on',live&&!muted);$('#onair').classList.toggle('muted',live&&muted);
   $('#onair').querySelector('span').textContent=!live?'OFF AIR':muted?'MUTED':talking?'TALKBACK':'ON AIR';}
 function showErr(t){$('#err').innerHTML=t;$('#err').style.display=t?'block':'none';}
-setInterval(()=>{if(!live)return;const s=Math.floor((Date.now()-t0)/1000);$('#sttag').innerHTML='on air '+String(Math.floor(s/60)).padStart(2,'0')+':'+String(s%60).padStart(2,'0')+' · <span class=mono>'+$('#freq').textContent+'</span>';},500);
+setInterval(()=>{if(!live)return;const s=Math.floor((Date.now()-t0)/1000);$('#sttag').innerHTML='on air <span class=mono>'+String(Math.floor(s/60)).padStart(2,'0')+':'+String(s%60).padStart(2,'0')+'</span>';},500);
 // ---------- peers
 function render(){$('#n').textContent=[...peers.values()].filter(p=>p.pc.connectionState==='connected').length;}
 function dropPeer(id){const p=peers.get(id);if(p){p.pc.close();peers.delete(id);render();}}
@@ -481,7 +470,7 @@ sig.onmsg=async(from,d)=>{const p=peers.get(from);
   else if(d.type==='ice'){if(p&&p.cid===d.cid){if(p.pc.remoteDescription)await p.pc.addIceCandidate(d.c).catch(()=>{});else p.pending.push(d.c);}}
   else if(d.type==='bye'){dropPeer(from);}};
 sig.onreset=()=>{sig.send('*',{type:'host-ready',hid:HID});broadcastMeta();};
-sig.onoffline=()=>{toast('Server not reachable — click the ClassCast app to start it again');};
+sig.onoffline=()=>{toast('Server not reachable — click the CCAST app to start it again');};
 // ---------- desk actions
 $('#go').onclick=()=>{if(!program)return;engine();live=true;muted=false;talking=false;t0=Date.now();applyGains();
   $('#idle').hidden=true;$('#live').hidden=false;setOnAir();$('#mute').classList.remove('on');$('#talk').classList.remove('on');
@@ -497,29 +486,28 @@ async function setTalk(on){if(!live||on===talking)return;if(on&&!micStream&&!(aw
   addEventListener('keyup',e=>{if(e.key==='t'&&!latched&&!/input|textarea|select/i.test(e.target.tagName))setTalk(false);});})();
 function stopAll(){live=false;muted=false;talking=false;applyGains();
   for(const [,p] of peers)p.pc.close();peers.clear();render();sig.send('*',{type:'host-stopped'});broadcastMeta();
-  $('#idle').hidden=false;$('#live').hidden=true;setOnAir();$('#sttag').innerHTML='studio desk · <span class=mono>'+$('#freq').textContent+'</span>';}
+  $('#idle').hidden=false;$('#live').hidden=true;setOnAir();$('#sttag').textContent='studio';}
 $('#stop').onclick=stopAll;
 addEventListener('pagehide',()=>{navigator.sendBeacon('/api/msg',JSON.stringify({from:'host',to:'*',data:{type:'host-stopped'}}));});
 if(!['localhost','127.0.0.1'].includes(location.hostname))showErr('Open this page as http://localhost:'+location.port+'/host — browsers only allow audio capture on localhost.');
 setOnAir();fetch('/api/reset?id=host').then(()=>{sig.send('*',{type:'host-ready',hid:HID});sig.run();});
 </script></body></html>"""
 
-LISTEN_HTML = r"""<!doctype html><html><head><meta charset=utf-8><title>ClassCast</title>
+LISTEN_HTML = r"""<!doctype html><html><head><meta charset=utf-8><title>CCAST</title>
 <meta name=viewport content="width=device-width,initial-scale=1"><style>%CSS%</style></head><body>
 <div class=listen>
-<header><div class=brand><span class=logo>%ICON%</span><span id=station>ClassCast</span></div><span class=pill id=lat class=mono>—</span></header>
+<header><div class=brand><span class=logo>%ICON%</span><span id=station>CCAST</span></div><span class=pill id=lat class=mono>—</span></header>
 <section class=card>
  <div class=radio>
-  <div class=rtop><span class=dot id=dot></span><span id=st>Off air</span><span class=grow></span><span class="mono rfreq" id=freq></span></div>
+  <div class=rtop><span class=dot id=dot></span><span id=st>Off air</span><span class=grow></span></div>
   <div class=rnow id=now>—</div>
   <div class=sub id=sub>Press Listen to tune in.</div>
  </div>
- <button class=big id=btn>%PLAY% Listen</button>
+ <div class=btns><button class=big id=btn>%PLAY% Listen</button><button class="big lmute" id=lmute title="Mute on this computer only">🔇</button></div>
  <div class=meters><div class=meter>L<div class=bar id=mL><i></i><b></b></div></div><div class=meter>R<div class=bar id=mR><i></i><b></b></div></div></div>
  <div style="margin-top:22px"><label>Volume</label><input type=range id=vol min=0 max=1 step=0.01 value=1></div>
  <div style="margin-top:18px"><label>Playback</label>
-  <div class=seg id=seg><button data-m=smooth class=on>Smooth</button><button data-m=fast>Low latency</button></div>
-  <div class=hint style="margin-top:8px">Smooth keeps a steady 150 ms buffer so music never warbles. Low latency follows the teacher more closely (~50 ms) at the cost of occasional glitches on busy Wi-Fi.</div></div>
+  <div class=seg id=seg><button data-m=smooth class=on>Smooth</button><button data-m=fast>Low latency</button></div></div>
  <div class=stats><span id=s1></span><span id=s2></span></div>
 </section>
 <div class=hint style="text-align:center">Use headphones. Keep this tab open in the background while you work — it reconnects by itself.</div>
@@ -530,7 +518,7 @@ LISTEN_HTML = r"""<!doctype html><html><head><meta charset=utf-8><title>ClassCas
 <script>%JS%
 const me='s-'+rnd();const sig=new Signal(me);const au=$('#au');
 let pc=null,listening=false,stopMeter=null,timer=null,pending=[],attempt=0,receiver=null;
-const meta={station:'ClassCast',now:'',live:false,muted:false,talking:false};
+const meta={station:'CCAST',now:'',live:false,muted:false,talking:false};
 let mode='smooth';try{mode=localStorage.cc_mode||'smooth';}catch(e){}
 // Chrome's jitter buffer is tuned for speech and time-stretches to chase latency, which warbles on music.
 // A fixed target keeps it steady. jitterBufferTarget is in ms; playoutDelayHint (older Chrome) is in seconds.
@@ -540,12 +528,13 @@ document.querySelectorAll('#seg button').forEach(b=>b.onclick=()=>{mode=b.datase
 applyMode();
 try{au.volume=$('#vol').value=localStorage.cc_vol||1;}catch(e){}
 $('#vol').oninput=()=>{au.volume=$('#vol').value;try{localStorage.cc_vol=au.volume;}catch(e){}};
-$('#freq').textContent=location.hostname.split('.').slice(-1)[0]+'.'+(location.port||'80').slice(0,2)+' FM';
 function setState(cls,head,sub){$('#dot').className='dot '+cls;$('#st').textContent=head;$('#sub').textContent=sub||'';}
 const connected=()=>pc&&pc.connectionState==='connected';
 function renderMeta(){$('#station').textContent=meta.station;document.title=meta.station;$('#now').textContent=meta.now||(meta.live?'Live from the studio':'—');
   if(connected())showLive();}
-function showLive(){if(meta.talking)setState('live','Teacher talking','');else if(meta.muted)setState('wait','Muted by the teacher','Stay tuned — it comes back automatically');else setState('live','On air','');}
+let lmuted=false;
+function showLive(){if(lmuted)setState('wait','Muted on this computer','Press 🔇 again to unmute');else if(meta.talking)setState('live','Teacher talking','');else if(meta.muted)setState('wait','Muted by the teacher','It comes back automatically');else setState('live','On air','');}
+$('#lmute').onclick=()=>{lmuted=!lmuted;au.muted=lmuted;$('#lmute').classList.toggle('on',lmuted);$('#lmute').textContent=lmuted?'🔈':'🔇';if(connected())showLive();};
 function schedule(ms){clearTimeout(timer);timer=setTimeout(()=>{if(listening&&!connected())hello();},ms);}
 function hello(){if(!listening)return;attempt++;sig.send('host',{type:'hello'});
   setState('wait','Tuning in…','Looking for the studio');schedule(Math.min(15000,4000+attempt*2000));}
@@ -722,7 +711,7 @@ if __name__ == "__main__":
     threading.Thread(target=prune, daemon=True).start()
     box = [f"Students open   {URL}", f"You (teacher)   http://localhost:{PORT}/host"]
     w = max(len(b) for b in box) + 4
-    print("\n  ┌" + "─" * w + "┐\n  │" + "ClassCast".center(w) + "│\n  ├" + "─" * w + "┤")
+    print("\n  ┌" + "─" * w + "┐\n  │" + "CCAST".center(w) + "│\n  ├" + "─" * w + "┤")
     for b in box:
         print("  │  " + b.ljust(w - 2) + "│")
     print("  └" + "─" * w + "┘\n  Close this window or press Ctrl-C to stop.\n", flush=True)
