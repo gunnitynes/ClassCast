@@ -17,7 +17,7 @@ Mailbox semantics (the part that makes reconnection reliable):
   * every poll also carries the server "generation"; if it changes the
     pages know the server was restarted and re-join by themselves
 """
-import json, os, socket, subprocess, sys, threading, time, webbrowser
+import json, os, socket, ssl, subprocess, sys, threading, time, webbrowser
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import urlparse, parse_qs
 
@@ -266,6 +266,31 @@ class Signal{
     for(const m of msgs){this.after=Math.max(this.after,m.seq);try{await this.onmsg(m.from,m.data);}catch(e){console.warn('msg',e);}}
   }catch(e){if(this.online!==false){this.online=false;this.onoffline();}await sleep(1500);}}}
 }
+// ---- Ultra path: raw PCM in 256-frame blocks over an unreliable data channel, AudioWorklet on both ends.
+// packet: u32 seq · u16 frames · u8 channels · u8 pad · u32 sampleRate · Int16 interleaved samples
+const CAP_WORKLET=`class C extends AudioWorkletProcessor{constructor(){super();this.seq=0;this.F=256;this.buf=new Int16Array(this.F*2);this.n=0;}
+process(inputs){const inp=inputs[0];if(!inp||!inp[0])return true;const L=inp[0],R=inp[1]||inp[0];
+ for(let i=0;i<L.length;i++){let a=L[i]*32767,b=R[i]*32767;this.buf[this.n*2]=a>32767?32767:a<-32768?-32768:a|0;this.buf[this.n*2+1]=b>32767?32767:b<-32768?-32768:b|0;
+  if(++this.n===this.F){const out=new ArrayBuffer(12+this.F*4);const v=new DataView(out);v.setUint32(0,this.seq++);v.setUint16(4,this.F);v.setUint8(6,2);v.setUint32(8,sampleRate);new Int16Array(out,12).set(this.buf);this.port.postMessage(out,[out]);this.n=0;}}
+ return true;}}registerProcessor('cap',C);`;
+class PcmRing{constructor(rate,report){this.rate=rate;this.report=report||(()=>{});this.N=1<<16;this.M=this.N-1;this.L=new Float32Array(this.N);this.R=new Float32Array(this.N);
+  this.rd=-1;this.end=0;this.T=512;this.src=48000;this.under=0;this.recent=0;this.q=0;this.got=0;}
+ cmd(d){if(d.cmd==='target')this.T=d.T;else if(d.cmd==='reset'){this.rd=-1;this.end=0;}}
+ push(d){const v=new DataView(d);const seq=v.getUint32(0),F=v.getUint16(4),ch=v.getUint8(6);this.src=v.getUint32(8)||48000;const pcm=new Int16Array(d,12);const pos=seq*F;
+  for(let i=0;i<F;i++){const k=(pos+i)&this.M;this.L[k]=pcm[i*ch]/32768;this.R[k]=pcm[i*ch+(ch>1?1:0)]/32768;}
+  if(pos+F>this.end)this.end=pos+F;this.got++;if(this.rd<0)this.rd=this.end-this.T;}
+ render(oL,oR){const n=oL.length;if(this.rd<0){oL.fill(0);oR.fill(0);return;}
+  let fill=this.end-this.rd;
+  if(fill>this.T+2048){this.rd=this.end-this.T;fill=this.T;}                          // far behind (tab throttled): jump forward
+  if(fill<n){oL.fill(0);oR.fill(0);this.under++;this.recent++;this.rd=this.end-this.T;   // underrun: re-prime at the target
+   if(this.recent>2&&this.T<4096){this.T+=256;this.recent=0;this.report({auto:this.T});}return;}
+  const corr=Math.max(-1,Math.min(1,(fill-this.T)/this.T))*0.004;                    // drift: nudge the read rate by up to ±0.4 %
+  const ratio=(this.src/this.rate)*(1+corr);
+  for(let i=0;i<n;i++){const j=Math.floor(this.rd),f=this.rd-j,a=j&this.M,b=(j+1)&this.M;oL[i]=this.L[a]+(this.L[b]-this.L[a])*f;oR[i]=this.R[a]+(this.R[b]-this.R[a])*f;this.rd+=ratio;}
+  if(++this.q%64===0){this.report({fill:this.end-this.rd,T:this.T,under:this.under,got:this.got});this.recent=Math.max(0,this.recent-1);}}}
+const PLAY_WORKLET=PcmRing.toString()+`;class P extends AudioWorkletProcessor{constructor(){super();this.r=new PcmRing(sampleRate,m=>this.port.postMessage(m));this.port.onmessage=e=>{const d=e.data;if(d&&d.cmd)this.r.cmd(d);else this.r.push(d);};}
+ process(_,outputs){const o=outputs[0];if(o&&o[0])this.r.render(o[0],o[1]||o[0]);return true;}}registerProcessor('play',P);`;
+const workletURL=src=>URL.createObjectURL(new Blob([src],{type:'application/javascript'}));
 // Opus tuned for music: full-band stereo, 320 kb/s, no DTX, in-band FEC for the odd lost packet.
 const OPUS='stereo=1;sprop-stereo=1;maxaveragebitrate=320000;maxplaybackrate=48000;sprop-maxcapturerate=48000;cbr=0;usedtx=0;useinbandfec=1;ptime=10;minptime=10';
 function stereo(sdp){const m=sdp.match(/a=rtpmap:(\d+) opus\/48000/i);if(!m)return sdp;const pt=m[1];
@@ -327,6 +352,9 @@ select{background-image:linear-gradient(45deg,transparent 50%,var(--ink) 50%),li
 .alt{color:var(--ink2);font-size:13px}.alt code{color:var(--ink)}
 .qr{background:#fff;padding:12px;border-radius:14px;line-height:0;border:1.5px solid var(--ink);justify-self:end}
 .qr img,.qr canvas{display:block;width:230px;height:230px}
+.ultralink{display:flex;gap:16px;align-items:center;margin-top:14px;padding-top:12px;border-top:1.5px dashed var(--ink3)}
+.ultralink .mono{font-size:15px;font-weight:700;word-break:break-all}.qr2{background:#fff;padding:6px;border-radius:10px;border:1.5px solid var(--ink);line-height:0;flex:none}.qr2 img,.qr2 canvas{display:block;width:96px;height:96px}
+body.projector .ultralink{display:none}
 /* channels */
 .chhead{display:flex;align-items:center;gap:10px;margin-bottom:8px}.chhead label{flex:1}
 .strip{display:grid;grid-template-columns:22px 150px minmax(0,1fr) 90px 40px;gap:10px;align-items:center;padding:6px 0;border-top:1.5px dashed var(--ink3)}
@@ -405,7 +433,8 @@ HOST_HTML = r"""<!doctype html><html><head><meta charset=utf-8><title>CCAST · S
   <div>
    <div class="url mono" id=url>…</div>
    <div class=alt id=alts></div>
-   <div class=row style="margin-top:16px"><button class=ghost id=copy>Copy link</button></div>
+   <div class=ultralink id=ultralink hidden><div><span class=lbl>Ultra link · lowest latency</span><div class="mono" id=urltls></div><div class=hint style="margin-top:4px">https with our own certificate: students click <b>Advanced → Proceed</b> once. Unlocks the audio-thread PCM path.</div></div><div class=qr2 id=qr2></div></div>
+   <div class=row style="margin-top:16px"><button class=ghost id=copy>Copy link</button><button class=ghost id=copytls hidden>Copy ultra link</button></div>
    <div class=hint>Same Wi-Fi as this Mac · any browser or phone · press <b>Listen</b> · leave the tab open while working.</div>
   </div>
   <div class=qr id=qr></div>
@@ -440,7 +469,7 @@ HOST_HTML = r"""<!doctype html><html><head><meta charset=utf-8><title>CCAST · S
    <button class="deskbtn mute" id=mute><span class=k>M</span><span>Mute</span><small>programme off, students stay</small></button>
    <button class="deskbtn stop" id=stop><span class=k>■</span><span>Stop</span><small>go off air</small></button>
   </div>
-  <div class="row" style="margin-top:12px"><div class=grow><label>Talkback mic</label><select id=mic></select></div><div class=hint id=src style="margin:0;flex:2;min-width:220px"></div></div>
+  <div class="row" style="margin-top:12px"><div class=grow><label>Talkback mic</label><select id=mic></select></div><div class=hint id=src style="margin:0;flex:2;min-width:220px"></div><span class="pill" id=ultra></span></div>
  </div>
  <div class=err id=err></div>
 
@@ -488,6 +517,8 @@ fetch('/api/info').then(r=>r.json()).then(i=>{
   $('#url').dataset.url=i.url;fitUrl();
   if(window.QRCode)new QRCode($('#qr'),{text:i.url,width:480,height:480,correctLevel:QRCode.CorrectLevel.M});
   if(i.alts.length)$('#alts').innerHTML='Also: '+i.alts.map(a=>`<code>http://${a}:${i.port}</code>`).join(' · ');
+  if(i.https){$('#ultralink').hidden=false;$('#urltls').textContent=i.https;$('#copytls').hidden=false;$('#copytls').onclick=async()=>{try{await navigator.clipboard.writeText(i.https);toast('Ultra link copied');}catch(e){toast(i.https);}};
+    if(window.QRCode)new QRCode($('#qr2'),{text:i.https,width:200,height:200,correctLevel:QRCode.CorrectLevel.M});}
   requestAnimationFrame(fitUrl);setTimeout(fitUrl,300);
 });
 if(window.ResizeObserver)new ResizeObserver(()=>fitUrl()).observe($('.sharegrid'));
@@ -530,7 +561,7 @@ async function arm(s){if(!s.deviceId){return;}showErr('');
     const tr=st.getAudioTracks()[0];try{tr.contentHint='music';}catch(e){}
     tr.onended=()=>{if(s.stream===st){showErr(`Channel "${s.name}": the input device went away.`);disarm(s);}};
     const old=s.stream;s.stream=st;if(s.src)s.src.disconnect();s.src=ac.createMediaStreamSource(st);s.src.connect(s.g);
-    if(old&&old!==st)old.getTracks().forEach(t=>t.stop());engine();updateGo();srcLine();}
+    if(old&&old!==st)old.getTracks().forEach(t=>t.stop());engine();updateGo();srcLine();if(capNode&&stems[0]===s){capSrcStem=null;ensureCapture();}}
   catch(e){showErr(`Channel "${s.name}": could not open that input — ${e.message}`);disarm(s);}}
 function disarm(s){if(s.src)s.src.disconnect();s.src=null;if(s.stream)s.stream.getTracks().forEach(t=>t.stop());s.stream=null;updateGo();}
 function armAll(){stems.forEach(s=>{if(!s.stream)arm(s);});}
@@ -581,6 +612,17 @@ setInterval(()=>{if(!live)return;const s=Math.floor((Date.now()-t0)/1000);$('#st
     scope();requestAnimationFrame(tick);})();
 })();
 $('#clip').onclick=()=>$('#clip').classList.remove('on');
+// ---------- ultra path: capture worklet on channel 1, fanned out to students who asked for it
+let capNode=null,capSrcStem=null;const pcmPeers=new Set();
+async function ensureCapture(){const s0=stems.find(x=>x.stream);if(!s0)return;if(capNode&&capSrcStem===s0)return;
+  if(!capNode){await ac.audioWorklet.addModule(workletURL(CAP_WORKLET));capNode=new AudioWorkletNode(ac,'cap',{numberOfInputs:1,numberOfOutputs:1,outputChannelCount:[1]});
+    const sink=ac.createGain();sink.gain.value=0;capNode.connect(sink).connect(ac.destination);   // keep the graph pulling
+    capNode.port.onmessage=e=>{if(!live||!pcmPeers.size)return;for(const p of pcmPeers){const d=p.pcm;if(d&&d.readyState==='open'&&d.bufferedAmount<65536){try{d.send(e.data);}catch(err){}}}};}
+  if(capSrcStem&&capSrcStem.src)try{capSrcStem.src.disconnect(capNode);}catch(e){}
+  capSrcStem=s0;if(s0.src)s0.src.connect(capNode);}
+function setPcm(p,on){if(on){pcmPeers.add(p);ensureCapture();}else pcmPeers.delete(p);
+  const s0=stems.find(x=>x.stream);const sn=s0&&p.senders[s0.id];if(sn){try{const prm=sn.getParameters();if(prm.encodings&&prm.encodings.length){prm.encodings[0].active=!on;sn.setParameters(prm).catch(()=>{});}}catch(e){}}   // no double bandwidth
+  $('#ultra').textContent=pcmPeers.size?pcmPeers.size+' on ultra':'';}
 // ---------- clock: MIDI Clock in (Web MIDI), fitted to a tempo/phase line, sent to students over data channels
 const clock={running:false,bpm:0,bpb:4,ticks:0,line:null,seq:0,lastTick:0};let midi=null;const tickT=[];
 try{clock.bpb=parseInt(localStorage.cc_bpb)||4;}catch(e){}$('#bpb').value=clock.bpb;
@@ -612,26 +654,27 @@ async function midiSetup(){if(!navigator.requestMIDIAccess){$('#midiin').innerHT
 midiSetup();
 // ---------- peers: one track per channel + talkback, all in one connection
 function render(){$('#n').textContent=[...peers.values()].filter(p=>p.pc.connectionState==='connected').length;}
-function dropPeer(id){const p=peers.get(id);if(p){p.pc.close();peers.delete(id);render();}}
+function dropPeer(id){const p=peers.get(id);if(p){pcmPeers.delete(p);p.pc.close();peers.delete(id);render();$('#ultra').textContent=pcmPeers.size?pcmPeers.size+' on ultra':'';}}
 function tuneSender(sn,kbps){try{const prm=sn.getParameters();prm.encodings=prm.encodings&&prm.encodings.length?prm.encodings:[{}];prm.encodings[0].maxBitrate=kbps*1000;prm.encodings[0].priority='high';prm.encodings[0].networkPriority='high';sn.setParameters(prm).catch(()=>{});}catch(e){}}
 const sendTrack=s=>s.stream.getAudioTracks()[0];              // the raw device track: no mixer in the path
 const tbSendTrack=()=>micStream?micStream.getAudioTracks()[0]:tbTrack;
 function stemList(pc,p){const byTrack=new Map();for(const s of stems)if(s.stream)byTrack.set(sendTrack(s),s);byTrack.set(tbSendTrack(),{id:'tb',name:'Talkback'});
   return pc.getTransceivers().map(t=>{const s=byTrack.get(t.sender.track);return s?{mid:t.mid,id:s.id,name:s.name,kind:s.id==='tb'?'tb':'ch'}:null;}).filter(Boolean);}
-function makePeer(id){const old=peers.get(id);if(old)old.pc.close();
+function makePeer(id){const old=peers.get(id);if(old){pcmPeers.delete(old);old.pc.close();}
   const pc=new RTCPeerConnection({iceServers:[]});const p={pc,cid:rnd(),pending:[],senders:{}};peers.set(id,p);
   const added=new Set();for(const s of stems){if(!s.stream)continue;const tr=sendTrack(s);if(added.has(tr))continue;added.add(tr);const sn=pc.addTrack(tr,s.stream);p.senders[s.id]=sn;tuneSender(sn,320);}   // two channels on one device share a track
   const tsn=pc.addTrack(tbSendTrack(),micStream||tbDest.stream);p.senders.tb=tsn;tuneSender(tsn,96);
   // data channel: clock timeline + clock-offset pings (unordered, no retransmits: newest wins)
   const dc=pc.createDataChannel('clock',{ordered:false,maxRetransmits:0});p.dc=dc;
   dc.onopen=()=>{try{dc.send(clockMsg());}catch(e){}};
-  dc.onmessage=e=>{try{const m=JSON.parse(e.data);if(m.type==='ping')dc.send(JSON.stringify({type:'pong',t1:m.t1,t2:performance.now()}));else if(m.type==='clock?')dc.send(clockMsg());}catch(err){}};
+  dc.onmessage=e=>{try{const m=JSON.parse(e.data);if(m.type==='ping')dc.send(JSON.stringify({type:'pong',t1:m.t1,t2:performance.now()}));else if(m.type==='clock?')dc.send(clockMsg());else if(m.type==='pcm')setPcm(p,!!m.on);}catch(err){}};
+  const pcm=pc.createDataChannel('pcm',{ordered:false,maxRetransmits:0});p.pcm=pcm;pcm.binaryType='arraybuffer';
   pc.onicecandidate=e=>{if(e.candidate)sig.send(id,{type:'ice',cid:p.cid,c:e.candidate});};
   pc.onconnectionstatechange=()=>{render();const s=pc.connectionState;
     if(s==='failed'||s==='closed'){if(peers.get(id)===p)dropPeer(id);}
     if(s==='disconnected')setTimeout(()=>{if(peers.get(id)===p&&pc.connectionState==='disconnected')dropPeer(id);},15000);};
   pc.createOffer().then(o=>{o.sdp=stereo(o.sdp);return pc.setLocalDescription(o);})
-    .then(()=>{sig.send(id,{type:'offer',cid:p.cid,hid:HID,sdp:pc.localDescription,stems:stemList(pc,p)});broadcastMeta(id);})
+    .then(()=>{sig.send(id,{type:'offer',cid:p.cid,hid:HID,sdp:pc.localDescription,stems:stemList(pc,p),pcm:stems.filter(x=>x.stream).length===1});broadcastMeta(id);})
     .catch(e=>console.warn(e));render();}
 function renegotiateAll(){for(const id of [...peers.keys()])makePeer(id);}
 function announceStems(){for(const [id,p] of peers)sig.send(id,{type:'stems',stems:stemList(p.pc,p)});}
@@ -729,6 +772,8 @@ svg.bg{position:fixed;inset:0;width:100%;height:100%;z-index:0;pointer-events:no
 .sw{position:relative;width:128px;height:28px;border:1.5px solid var(--ink);border-radius:14px;background:var(--paper);cursor:pointer;display:grid;grid-template-columns:1fr 1fr;font-size:9px;letter-spacing:.08em;text-transform:uppercase;color:var(--ink2);align-items:center;text-align:center;font-weight:700}
 .sw::before{content:'';position:absolute;top:2px;bottom:2px;width:calc(50% - 3px);left:2px;border-radius:11px;background:var(--ink);transition:left .15s}
 .sw.fast::before{left:calc(50% + 1px)}.sw span{position:relative;z-index:1}.sw:not(.fast) span:first-child,.sw.fast span:last-child{color:#fff}
+.sw.tri{width:168px;grid-template-columns:1fr 1fr 1fr}.sw.tri::before{width:calc(33.33% - 3px)}.sw.tri.p1::before{left:calc(33.33% + 1px)}.sw.tri.p2::before{left:calc(66.66% + 1px)}
+.sw.tri span{color:var(--ink2)}.sw.tri.p0 span:nth-child(1),.sw.tri.p1 span:nth-child(2),.sw.tri.p2 span:nth-child(3){color:#fff}
 .unmute{position:fixed;inset:0;background:rgba(247,246,242,.9);display:none;place-items:center;z-index:9}.unmute.show{display:grid}
 .unmute button{font:inherit;font-weight:800;letter-spacing:.1em;text-transform:uppercase;border:1.5px solid var(--ink);background:var(--ink);color:#fff;border-radius:14px;padding:20px 40px;cursor:pointer}
 .toast{position:fixed;left:50%;bottom:20px;transform:translateX(-50%) translateY(20px);opacity:0;background:var(--ink);color:#fff;padding:10px 16px;border-radius:12px;transition:.25s;pointer-events:none;font-weight:600;z-index:9}.toast.show{opacity:1;transform:translateX(-50%)}
@@ -805,7 +850,7 @@ LISTEN_HTML = r"""<!doctype html><html><head><meta charset=utf-8><title>CCAST</t
     <div class=btnlbl><button class="round mute" id=vis title="Visual metronome — fullscreen"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="14" rx="2"/><circle cx="12" cy="11" r="3.2" fill="currentColor" stroke="none"/></svg></button><span class=lbl>visual</span></div>
    </div>
    <div class=btnlbl><div class=sw id=snd title="Click sound"><span>stick</span><span>shaker</span></div><span class=lbl>sound</span></div>
-   <div class=btnlbl><div class=sw id=seg title="Jitter buffer: steady 150 ms, or the minimum the network allows"><span>smooth</span><span>min</span></div><span class=lbl>buffer</span></div>
+   <div class=btnlbl><div class="sw tri" id=seg title="Smooth: steady 150 ms · Min: WebRTC at its minimum · Ultra: raw PCM over a data channel, ~10 ms buffer"><span>smooth</span><span>min</span><span>ultra</span></div><span class=lbl>buffer</span></div>
   </div>
  </section>
 </main>
@@ -840,6 +885,7 @@ const master=rac.createGain();master.connect(rac.destination);const bus=rac.crea
 const abus=rac.createGain();                                                                                 // analysis-only sum for meters/scope (never audible)
 const split=rac.createChannelSplitter(2);abus.connect(split);const N=2048,bufL=new Float32Array(N),bufR=new Float32Array(N);
 const IOS=/iP(hone|ad|od)/.test(navigator.userAgent);let directMode=false;
+const ultra={avail:false,dc:null,node:null,gain:null,ready:false,fill:0,T:512,under:0,on:false};   // the PCM path (set up below)
 const clickGain=rac.createGain();clickGain.gain.value=0;const clickMaster=rac.createGain();clickGain.connect(clickMaster);clickMaster.connect(rac.destination);clickGain.connect(abus);   // click: own path to the speakers
 const an=rac.createAnalyser(),anR=rac.createAnalyser();an.fftSize=anR.fftSize=N;an.smoothingTimeConstant=anR.smoothingTimeConstant=0;split.connect(an,0);split.connect(anR,1);
 const chans=new Map();   // stemId -> {id,name,kind,gain,src,el,level,muted,solo}
@@ -848,9 +894,11 @@ function ramp(g,v,ms){const t=rac.currentTime;g.gain.cancelScheduledValues(t);g.
 // ---------- buffer switch
 let mode='smooth';try{mode=localStorage.cc_mode||'smooth';}catch(e){}
 // Chrome's jitter buffer is tuned for speech and time-stretches to chase latency, which warbles on music.
-// Smooth: a fixed 150 ms. Min: target 0 — NetEq then holds only what the measured network jitter needs (≈10–20 ms on a good LAN).
-function applyMode(){const ms=mode==='smooth'?150:0;for(const r of receivers){try{r.jitterBufferTarget=ms;}catch(e){}try{if('playoutDelayHint' in r)r.playoutDelayHint=ms/1000;}catch(e){}}$('#seg').classList.toggle('fast',mode==='fast');}
-$('#seg').onclick=()=>{mode=mode==='smooth'?'fast':'smooth';try{localStorage.cc_mode=mode;}catch(e){}applyMode();};applyMode();
+// Smooth: a fixed 150 ms. Min: target 0 — NetEq then holds only what the measured network jitter needs. Ultra: our own PCM path (see below).
+const MODES=['smooth','fast','ultra'];if(!MODES.includes(mode))mode='smooth';
+function applyMode(){const ms=mode==='smooth'?150:0;for(const r of receivers){try{r.jitterBufferTarget=ms;}catch(e){}try{if('playoutDelayHint' in r)r.playoutDelayHint=ms/1000;}catch(e){}}
+  $('#seg').className='sw tri p'+MODES.indexOf(mode);if(typeof ultraApply==='function')ultraApply();}
+$('#seg').onclick=()=>{mode=MODES[(MODES.indexOf(mode)+1)%3];try{localStorage.cc_mode=mode;}catch(e){}applyMode();};
 // ---------- knobs (0..1, perceptual: gain = v^2) — drag vertically or scroll, double-click resets
 function makeKnob(el,v,onchange,size){el.innerHTML=`<svg viewBox="0 0 100 100" fill="none" stroke="#3b2d6e" stroke-width="1.5"><g class=ticks></g><circle cx="50" cy="50" r="30" fill="#fbfaf8"/><circle cx="50" cy="50" r="24" stroke-dasharray="1.5 3.2" opacity=".6"/><g class=ind><line x1="50" y1="50" x2="50" y2="24" stroke-width="2.5" stroke-linecap="round"/></g></svg><div class="val mono"></div>`;
   const ticks=el.querySelector('.ticks'),ind=el.querySelector('.ind'),val=el.querySelector('.val');
@@ -869,9 +917,11 @@ function applyMix(){const active={};const list=[...chans.values()];directMode=!I
   // direct: the media element plays the track itself (shortest path). mixing: elements muted, Web Audio sums the channels.
   const vm=lmuted?0:vol*vol;
   for(const c of list){const g=chanGain(c)*(c.kind==='tb'?1:duck());
-    if(directMode){c.sink.muted=false;c.sink.volume=Math.min(1,g*vm);ramp(c.gain,0,20);}else{c.sink.muted=true;c.sink.volume=1;ramp(c.gain,g,40);}
+    const carried=ultra.on&&c.kind!=='tb';
+    if(directMode){c.sink.muted=carried;c.sink.volume=Math.min(1,g*vm);ramp(c.gain,0,20);}else{c.sink.muted=true;c.sink.volume=1;ramp(c.gain,carried?0:g,40);}
     if(c.kind!=='tb')active[c.id]=chanGain(c)>0;}
-  ramp(master,directMode?0:vm,30);ramp(clickMaster,vm,30);
+  ramp(master,directMode?0:vm,30);ramp(clickMaster,lmuted?0:1,30);
+  if(typeof ultraApply==='function')ultraApply();
   clearTimeout(applyMix.t);applyMix.t=setTimeout(()=>sig.send('host',{type:'active',active}),250);   // tell the studio which channels to actually send
   for(const c of chans.values())if(c.el){c.el.classList.toggle('muted',c.muted);c.el.classList.toggle('solo',c.solo);}}
 function renderMixer(){const list=[...chans.values()].filter(c=>c.kind!=='tb');const mx=$('#mixer');mx.hidden=list.length<2;mx.innerHTML='';if(list.length<2)return;
@@ -893,7 +943,7 @@ function showLive(){if(lmuted)setState('wait','Muted here','Press mute again to 
 $('#lmute').onclick=()=>{lmuted=!lmuted;applyMix();$('#lmute').classList.toggle('on',lmuted);if(connected())showLive();};
 function schedule(ms){clearTimeout(timer);timer=setTimeout(()=>{if(listening&&!connected())hello();},ms);}
 function hello(){if(!listening)return;attempt++;sig.send('host',{type:'hello'});setState('wait','Tuning in…','Looking for the studio');schedule(Math.min(15000,4000+attempt*2000));}
-function teardown(){if(pc){pc.onconnectionstatechange=null;pc.close();pc=null;}receivers=[];pending=[];if(dc){clearInterval(dc._pinger);dc=null;}clk.line=null;clk.running=false;clk.offset=null;clk.bestRtt=Infinity;clk.seq=-1;killClicks();renderClock();lastBytes=lastT=lastJbD=lastJbN=0;clearChans();$('#lat').textContent='—';$('#s1').textContent='';renderMeta();}
+function teardown(){if(pc){pc.onconnectionstatechange=null;pc.close();pc=null;}receivers=[];pending=[];if(dc){clearInterval(dc._pinger);dc=null;}ultra.dc=null;ultra.on=false;ultra.avail=false;if(ultra.gain)ramp(ultra.gain,0,20);clk.line=null;clk.running=false;clk.offset=null;clk.bestRtt=Infinity;clk.seq=-1;killClicks();renderClock();lastBytes=lastT=lastJbD=lastJbN=0;clearChans();$('#lat').textContent='—';$('#s1').textContent='';renderMeta();}
 // ---------- the oscilloscope + meters on the receive bus
 (function buildScale(){const el=$('#scale');[-60,-48,-36,-24,-18,-12,-6,-3,0].forEach(db=>{const t=document.createElement('span');t.style.left=((db+60)/60*100)+'%';t.textContent=db===0?'0':db;el.append(t);});})();
 const gr=$('#grat'),gx=gr.getContext('2d'),bm=$('#beam'),bx=bm.getContext('2d');let W=0,H=0,D=1;
@@ -920,6 +970,23 @@ function draw(){
     bx.shadowBlur=0;}
   requestAnimationFrame(draw);}
 draw();
+// ---------- ultra path: PCM from the studio -> worklet jitter buffer -> speakers. Replaces the Opus programme when active.
+(async()=>{const onrep=d=>{if(d.fill!=null){ultra.fill=d.fill;ultra.T=d.T;ultra.under=d.under;}if(d.auto)ultra.T=d.auto;};
+  ultra.gain=rac.createGain();ultra.gain.gain.value=0;ultra.gain.connect(rac.destination);
+  try{if(rac.audioWorklet){await rac.audioWorklet.addModule(workletURL(PLAY_WORKLET));const n=new AudioWorkletNode(rac,'play',{numberOfInputs:0,numberOfOutputs:1,outputChannelCount:[2]});
+      n.port.onmessage=e=>onrep(e.data);ultra.node=n;ultra.feed=b=>n.port.postMessage(b,[b]);ultra.reset=()=>n.port.postMessage({cmd:'reset'});ultra.path='worklet';}
+    else{const ring=new PcmRing(rac.sampleRate,onrep);const sp=rac.createScriptProcessor(256,0,2);      // plain-http pages have no AudioWorklet: main-thread fallback, 256-frame blocks
+      sp.onaudioprocess=e=>ring.render(e.outputBuffer.getChannelData(0),e.outputBuffer.getChannelData(1));ultra.node=sp;ultra.feed=b=>ring.push(b);ultra.reset=()=>ring.cmd({cmd:'reset'});ultra.path='main';}
+    ultra.node.connect(ultra.gain);ultra.node.connect(abus);ultra.ready=true;}catch(e){console.warn('ultra unavailable',e);}})();
+let httpsLink=null;fetch('/api/info').then(r=>r.json()).then(i=>{httpsLink=i.https||null;}).catch(()=>{});
+function ultraApply(){const want=mode==='ultra'&&ultra.avail&&ultra.ready&&connected();
+  if(mode==='ultra'&&ultra.path==='main'&&httpsLink&&location.protocol==='http:'&&!window.__tlsHint){window.__tlsHint=true;toast('Even lower: open '+httpsLink+' (accept the certificate once)');}const on=want&&ultra.dc&&ultra.dc.readyState==='open';
+  if(on!==ultra.on){ultra.on=on;if(dc&&dc.readyState==='open')try{dc.send(JSON.stringify({type:'pcm',on}));}catch(e){}if(on&&ultra.reset)ultra.reset();}
+  const prog=[...chans.values()].filter(c=>c.kind!=='tb');const vm=lmuted?0:vol*vol;
+  if(ultra.gain)ramp(ultra.gain,on?vm*duck()*(prog[0]?chanGain(prog[0]):1):0,30);
+  for(const c of prog){if(on){c.sink.muted=true;ramp(c.gain,0,20);}}          // Opus programme silenced while ultra carries it
+  if(!on&&want&&dc&&dc.readyState==='open')setTimeout(ultraApply,300);}
+function wirePcm(ch){ultra.dc=ch;ch.binaryType='arraybuffer';ch.onmessage=e=>{if(ultra.on&&ultra.feed&&e.data instanceof ArrayBuffer)ultra.feed(e.data);};ch.onopen=()=>ultraApply();ch.onclose=()=>{ultra.dc=null;ultra.on=false;};}
 // ---------- click track: the DAW's MIDI clock arrives via the data channel; we schedule a local click on the beat,
 // delayed by the measured stream latency so it lands on the music the student actually hears.
 const clk={on:false,sound:'stick',level:0.6,line:null,running:false,bpm:0,bpb:4,offset:null,bestRtt:Infinity,lastBeat:-1,seq:-1,nodes:[]};
@@ -1008,10 +1075,10 @@ sig.onmsg=async(from,d)=>{if(from!=='host')return;
   else if(d.type==='offer'){teardown();stemInfo=d.stems||[];pc=new RTCPeerConnection({iceServers:[]});pc.cid=d.cid;pc.hid=d.hid;
     pc.ontrack=e=>{const mid=e.transceiver.mid;const info=stemInfo.find(s=>s.mid===mid)||{id:'m'+mid,name:'Channel',kind:'ch'};receivers.push(e.receiver);applyMode();
       addChan(info,e.streams[0]);renderMixer();rac.resume().then(()=>$('#unmute').classList.remove('show')).catch(()=>$('#unmute').classList.add('show'));};
-    pc.ondatachannel=e=>wireDC(e.channel);
+    pc.ondatachannel=e=>{if(e.channel.label==='pcm')wirePcm(e.channel);else wireDC(e.channel);};ultra.avail=!!d.pcm;
     pc.onicecandidate=e=>{if(e.candidate)sig.send('host',{type:'ice',cid:pc.cid,c:e.candidate});};
     pc.onconnectionstatechange=()=>{const s=pc.connectionState;
-      if(s==='connected'){attempt=0;clearTimeout(timer);showLive();renderMeta();if(rac.state!=='running')$('#unmute').classList.add('show');}
+      if(s==='connected'){attempt=0;clearTimeout(timer);showLive();renderMeta();ultraApply();if(rac.state!=='running')$('#unmute').classList.add('show');}
       else if(s==='disconnected'){setState('wait','Reconnecting…','');schedule(3000);}
       else if(s==='failed'){setState('wait','Reconnecting…','');hello();}};
     await pc.setRemoteDescription(d.sdp);const a=await pc.createAnswer();a.sdp=stereo(a.sdp);await pc.setLocalDescription(a);
@@ -1038,11 +1105,13 @@ setInterval(async()=>{if(!connected())return;try{const st=await pc.getStats();le
   const playout=poN>0?poD/poN:null;                                   // measured: jitter buffer -> media element -> device (direct path)
   const out=directMode&&playout!=null?playout:(rac.outputLatency||0)+(rac.baseLatency||0);
   // estimate: capture ≈10 ms + 10 ms Opus frame + half the round trip + jitter buffer + playout path (measured where Chrome reports it)
-  const est=jb!=null?Math.round((0.010+0.010+(rtt||0)/2+jb+out)*1000):null;
+  let est=jb!=null?Math.round((0.010+0.010+(rtt||0)/2+jb+out)*1000):null;
+  if(ultra.on){const wa=(rac.outputLatency||0)+(rac.baseLatency||0);const blk=ultra.path==='main'?512/rac.sampleRate:0;est=Math.round((0.012+0.0053+0.003+(rtt||0)/2+ultra.fill/48000+blk+wa)*1000);}   // capture ≈12 · block 5.3 · hops ≈3 · net · our buffer · (main-thread blocks) · output
   if(rac.outputLatency>0.06&&!window.__btWarned){window.__btWarned=true;toast('Output latency '+Math.round(rac.outputLatency*1000)+' ms — Bluetooth headphones? Wired ones are ~100 ms faster');}if(est!=null){const e=est/1000;if(Math.abs(e-latSec)>0.015)latSec=e;else latSec=latSec*0.95+e*0.05;}   // click compensation: re-lock only on a real change, otherwise hold steady
-  $('#lat').textContent=(est!=null?'≈ '+est+' ms end-to-end · ':'')+(jb!=null?'buffer '+Math.round(jb*1000)+' ms':'')+(rtt!=null?' · net '+Math.round(rtt*1000)+' ms':'')+' · '+(directMode?'direct':'mix')+(lost?' · lost '+lost:'');
+  const buf=ultra.on?'buffer '+Math.round(ultra.fill/48)+' ms'+(ultra.under?' · '+ultra.under+' underruns':''):(jb!=null?'buffer '+Math.round(jb*1000)+' ms':'');
+  $('#lat').textContent=(est!=null?'≈ '+est+' ms end-to-end · ':'')+buf+(rtt!=null?' · net '+Math.round(rtt*1000)+' ms':'')+' · '+(ultra.on?'ultra pcm'+(ultra.path==='main'?' (http)':''):directMode?'direct':'mix')+(lost?' · lost '+lost:'');
   $('#s1').textContent=codec+(n>1?' × '+(n-1)+'+tb':'')+(kbps?' · '+kbps+' kb/s':'');}catch(e){}},2000);
-renderMeta();sig.run();
+applyMode();renderMeta();sig.run();
 </script></body></html>"""
 
 
@@ -1071,6 +1140,12 @@ class H(BaseHTTPRequestHandler):
     def log_message(self, *a):  # quiet
         pass
 
+    def handle(self):
+        try:
+            super().handle()
+        except (ssl.SSLError, ConnectionResetError, BrokenPipeError):
+            pass
+
     def _send(self, code, body, ctype="application/json"):
         if isinstance(body, str):
             body = body.encode()
@@ -1094,7 +1169,7 @@ class H(BaseHTTPRequestHandler):
         if u.path == "/qrcode.min.js":
             return self._send(200, QR_JS, "application/javascript")
         if u.path == "/api/info":
-            return self._send(200, json.dumps({"ip": IPS[0], "alts": IPS[1:], "port": PORT, "url": URL, "gen": GEN}))
+            return self._send(200, json.dumps({"ip": IPS[0], "alts": IPS[1:], "port": PORT, "url": URL, "https": URL_TLS, "gen": GEN}))
         if u.path == "/api/poll":
             cid = q.get("id", [""])[0]
             if not cid:
@@ -1154,6 +1229,31 @@ def shutdown():
     os._exit(0)
 
 
+CERT = os.path.join(HERE, ".classcast-cert.pem"); KEY = os.path.join(HERE, ".classcast-key.pem")
+
+
+def ensure_cert(ip):
+    """Self-signed certificate for the https 'ultra' link (AudioWorklet needs a secure context). Made once with the system openssl."""
+    if os.path.exists(CERT) and os.path.exists(KEY):
+        return True
+    try:
+        subprocess.run(["openssl", "req", "-x509", "-newkey", "rsa:2048", "-nodes", "-keyout", KEY, "-out", CERT, "-days", "3650",
+                        "-subj", "/CN=CCAST", "-addext", f"subjectAltName=IP:{ip},DNS:localhost"], check=True, capture_output=True)
+        return True
+    except Exception as e:
+        log(f"no https (openssl): {e}"); return False
+
+
+def serve_tls(port):
+    try:
+        ctx = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER); ctx.load_cert_chain(CERT, KEY)
+        srv = ThreadingHTTPServer(("0.0.0.0", port), H); srv.daemon_threads = True
+        srv.socket = ctx.wrap_socket(srv.socket, server_side=True)
+        threading.Thread(target=srv.serve_forever, daemon=True).start(); return True
+    except Exception as e:
+        log(f"no https: {e}"); return False
+
+
 def bind(port_wanted):
     for port in range(port_wanted, port_wanted + 10):
         try:
@@ -1187,9 +1287,10 @@ if __name__ == "__main__":
     srv, PORT = bind(PORT_WANTED)
     srv.daemon_threads = True
     IPS = lan_ips(); URL = f"http://{IPS[0]}:{PORT}"
+    PORT_TLS = PORT + 363; URL_TLS = f"https://{IPS[0]}:{PORT_TLS}" if ensure_cert(IPS[0]) and serve_tls(PORT_TLS) else None
     write_runfiles(PORT)
     threading.Thread(target=prune, daemon=True).start()
-    box = [f"Students open   {URL}", f"You (teacher)   http://localhost:{PORT}/host"]
+    box = [f"Students open   {URL}", f"Ultra link      {URL_TLS or '-'}", f"You (teacher)   http://localhost:{PORT}/host"]
     w = max(len(b) for b in box) + 4
     print("\n  ┌" + "─" * w + "┐\n  │" + "CCAST".center(w) + "│\n  ├" + "─" * w + "┤")
     for b in box:

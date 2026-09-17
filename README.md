@@ -81,25 +81,32 @@ result here.)
    The transport readout shows ▶ tempo · bar.beat while the DAW plays.
 
 ## Latency
-Built for sync and reference, so the chain is as short as a browser allows:
-- Studio sends the **raw device tracks** — no mixer in the send path. Mute is a
-  track switch; the talkback duck is done on the receiver.
-- **10 ms Opus frames** (Chrome's minimum).
-- Receiver **Min** setting: jitter-buffer target 0 → NetEq holds only what the
-  measured network jitter needs (≈10–20 ms on a good LAN; it rises by itself on
-  bad Wi‑Fi). **Smooth** = steady 150 ms for music that must never warble.
-- With one programme channel the receiver plays **directly through the media
-  element** (shortest playout path); the Web Audio mixing path is only used when
-  the cue mixer has 2+ channels.
-- The header estimate (`≈ 55 ms end-to-end · direct`) uses Chrome's own measured
-  jitter-buffer and playout delays. Realistic floor: **~45–60 ms** wired-Wi‑Fi;
-  ~100 ms in Smooth. A drummer playing to a click needs <15 ms — not a browser job.
+Three receiver settings (the **buffer** switch):
+- **Smooth** — WebRTC/Opus, steady 150 ms jitter buffer. Music never warbles.
+- **Min** — WebRTC/Opus at its floor: 10 ms frames, jitter target 0 (NetEq holds only
+  what the network needs), raw device tracks from the studio (no mixer in the path),
+  direct media-element playout. ≈ 55–70 ms on a real Mac.
+- **Ultra** — a different transport: raw 16‑bit PCM in 5.3 ms blocks over a WebRTC
+  data channel, played by an audio-thread worklet with our own ~10 ms adaptive jitter
+  buffer and drift-correcting resampler. No codec, no NetEq, no browser audio-output
+  stage. ≈ 35–45 ms on a real Mac. ~1.5 Mb/s per student (fine on a classroom LAN).
+  Talkback and the multi-channel cue mixer stay on Opus; Ultra carries channel 1.
 
-To get the last milliseconds in the room: teacher's Mac on **Ethernet**, students
-on 5 GHz Wi‑Fi, **wired headphones** (Bluetooth adds 100–200 ms — the receiver
-warns when it sees it), Min mode. To *measure* it for real: play a click from
-the DAW, cable one student's headphone out back into a spare interface input,
-record both against each other and read the offset in the DAW.
+**The https "ultra link"** (shown on the studio next to the normal address, also as a
+small QR, e.g. `https://192.168.2.103:8443`): browsers only allow the audio-thread
+worklet on secure pages, so over plain http Ultra falls back to a main-thread path
+(~10 ms slower, marked "(http)" in the readout). The link uses CCAST's own
+certificate — students click **Advanced → Proceed** once per device.
+
+The header estimate (`≈ 40 ms end-to-end · ultra pcm`) is built from Chrome's own
+measured numbers plus our buffer fill. The stream volume knob does not touch the
+click level (click has its own knob); local mute silences both.
+
+In the room: teacher's Mac on Ethernet, students on 5 GHz Wi‑Fi, wired headphones
+(Bluetooth adds 100–200 ms; the receiver warns). To measure for real: play a click
+from the DAW, cable a student's headphone out into a spare interface input, record
+both and read the offset. A drummer tracking to a click needs <15 ms — no browser
+path gets there.
 
 ## One studio tab
 The studio runs in exactly one browser tab. If a second one is opened (e.g. the

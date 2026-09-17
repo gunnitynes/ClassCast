@@ -3,3 +3,5 @@
 .classcast.port
 classcast.log
 .DS_Store
+.classcast-cert.pem
+.classcast-key.pem
