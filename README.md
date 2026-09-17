@@ -80,35 +80,28 @@ result here.)
 3. Studio page → **Clock · MIDI in** → pick the IAC bus; set **beats / bar**.
    The transport readout shows ▶ tempo · bar.beat while the DAW plays.
 
-## Latency
-Three receiver settings (the **buffer** switch):
-- **Smooth** — WebRTC/Opus, steady 150 ms jitter buffer. Music never warbles.
-- **Min** — WebRTC/Opus at its floor: 10 ms frames, jitter target 0 (NetEq holds only
-  what the network needs), raw device tracks from the studio (no mixer in the path),
-  direct media-element playout. ≈ 55–70 ms on a real Mac.
-- **Ultra** — a different transport: raw 16‑bit PCM in 5.3 ms blocks over a WebRTC
-  data channel, played by an audio-thread worklet with our own ~10 ms adaptive jitter
-  buffer and drift-correcting resampler. No codec, no NetEq, no browser audio-output
-  stage. ≈ 35–45 ms on a real Mac. ~1.5 Mb/s per student (fine on a classroom LAN).
-  Talkback and the multi-channel cue mixer stay on Opus; Ultra carries channel 1.
+## Latency — set by the teacher
+The studio's **Latency · for every receiver** selector applies to all students at once
+(they see it as a read-only indicator):
+- **Smooth** — WebRTC/Opus, steady 150 ms jitter buffer. Music never warbles. ≈ 180 ms.
+- **Min** — WebRTC/Opus at its floor: 10 ms frames, jitter target 0, raw device tracks,
+  direct media-element playout. ≈ 55–70 ms.
+- **Ultra** — raw 16‑bit PCM in 5.3 ms blocks over a WebRTC data channel, played from
+  our own ~10 ms adaptive jitter buffer with a drift-correcting resampler. No codec, no
+  NetEq, no browser audio-output stage. ≈ 40–50 ms over the normal http address.
+  1.5 Mb/s per student. Talkback and the multi-channel cue mixer stay on Opus.
 
-**The https "ultra link"** (shown on the studio next to the normal address, also as a
-small QR, e.g. `https://192.168.2.103:8443`): browsers only allow the audio-thread
-worklet on secure pages, so over plain http Ultra falls back to a main-thread path
-(~10 ms slower, marked "(http)" in the readout). Choosing **Ultra** on the normal page
-takes the student there automatically; the link uses CCAST's own certificate, so
-Chrome shows a warning once per device — **Advanced → Proceed** — and the receiver
-opens already set to Ultra.
+Optional, off by default: **send Ultra receivers to the https link**. Browsers only allow
+the audio-thread worklet on secure pages, which saves another ≈10 ms — but the link
+uses CCAST's own certificate (valid 397 days, regenerated automatically), so each device
+sees a "connection is not private" warning once: *Advanced → Proceed*. Leave it off for
+a warning-free classroom; turn it on when squeezing the last milliseconds.
 
-The header estimate (`≈ 40 ms end-to-end · ultra pcm`) is built from Chrome's own
-measured numbers plus our buffer fill. The stream volume knob does not touch the
-click level (click has its own knob); local mute silences both.
-
+The receiver header shows an honest estimate (`≈ 45 ms end-to-end · ultra pcm`) built from
+Chrome's own measured numbers. The stream volume knob does not touch the click level.
 In the room: teacher's Mac on Ethernet, students on 5 GHz Wi‑Fi, wired headphones
-(Bluetooth adds 100–200 ms; the receiver warns). To measure for real: play a click
-from the DAW, cable a student's headphone out into a spare interface input, record
-both and read the offset. A drummer tracking to a click needs <15 ms — no browser
-path gets there.
+(Bluetooth adds 100–200 ms; the receiver warns). A drummer tracking to a click needs
+<15 ms — no browser path gets there.
 
 ## One studio tab
 The studio runs in exactly one browser tab. If a second one is opened (e.g. the

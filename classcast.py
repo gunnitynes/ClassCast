@@ -363,6 +363,12 @@ body.projector .ultralink{display:none}
 .strip .mini{height:8px;border:1.5px solid var(--ink);border-radius:4px;overflow:hidden;background:var(--paper)}.strip .mini i{display:block;height:100%;width:0;background:linear-gradient(90deg,var(--ink2),var(--ink));transition:width .05s}
 .strip .x{padding:7px 10px;font-size:14px}
 @media(max-width:640px){.strip{grid-template-columns:22px 1fr 40px}.strip select{grid-column:2/3}.strip .mini{grid-column:2/3}}
+.latrow{display:grid;grid-template-columns:auto 1fr;gap:10px 18px;align-items:end;margin-top:14px;padding-top:14px;border-top:1.5px dashed var(--ink3)}
+.sw3{display:flex;border:1.5px solid var(--ink);border-radius:12px;overflow:hidden;background:var(--card)}
+.sw3 button{border:0;border-radius:0;padding:10px 16px;font-size:11px;letter-spacing:.14em;background:transparent}.sw3 button+button{border-left:1.5px solid var(--ink)}.sw3 button.on{background:var(--ink);color:#fff}
+.lathint{color:var(--ink2);font-size:13px;padding-bottom:10px}
+.chk{grid-column:1/-1;display:flex;gap:10px;align-items:flex-start;font-size:13px;letter-spacing:0;text-transform:none;color:var(--ink2);cursor:pointer}.chk input{margin-top:3px;accent-color:var(--ink)}
+@media(max-width:640px){.latrow{grid-template-columns:1fr}}
 /* clock */
 .clockrow{display:grid;grid-template-columns:minmax(0,1.2fr) 110px minmax(0,1fr);gap:12px;align-items:end;margin-top:14px;padding-top:14px;border-top:1.5px dashed var(--ink3)}
 @media(max-width:640px){.clockrow{grid-template-columns:1fr 1fr}.clockstat{grid-column:1/-1}}
@@ -450,6 +456,11 @@ HOST_HTML = r"""<!doctype html><html><head><meta charset=utf-8><title>CCAST · S
   <div class=clockstat><label>DAW transport</label><div class="mono" id=clockst>no clock</div><div class=beats id=beats></div></div>
  </div>
  <div class=hint id=clockhint>Send MIDI Clock from the DAW to the <b>IAC Driver</b> (Audio MIDI Setup → MIDI Studio → IAC Driver → <i>Device is online</i>). Ableton Live: Preferences → Link/Tempo/MIDI → Output IAC Bus → <b>Sync</b> on. Pro Tools: Setup → Peripherals → Synchronization → <b>MIDI Beat Clock</b> → IAC Bus. Students then get a native click that follows your transport.</div>
+ <div class=latrow>
+  <div><label>Latency · for every receiver</label><div class="sw3" id=latsel><button data-m=smooth>Smooth</button><button data-m=fast>Min</button><button data-m=ultra>Ultra</button></div></div>
+  <div class=lathint id=lathint></div>
+  <label class=chk id=tlsrow><input type=checkbox id=tls> send Ultra receivers to the https link (audio-thread path, ≈10 ms lower; browsers show a certificate warning once per device)</label>
+ </div>
  <div class=hint id=chhint>One channel = the normal stream. Add more and every student gets their own cue mix: knobs, mute and solo per channel. Six virtual stereo devices come with this Mac (Pro Tools Audio Bridge 2‑A, 2‑B, 6, 16, 32, 64) — combine them with your interface in an Aggregate Device and route DAW sends to them.</div>
 
  <div class=vu>
@@ -486,7 +497,7 @@ const peers=new Map();           // id -> {pc,cid,pending:[],senders:{stemId:RTC
 const HID=rnd();                 // this host page instance; students ignore host-ready from a host they're already connected to
 const sig=new Signal('host','&hid='+HID);
 let live=false,muted=false,talking=false,hasSignal=false,t0=0,micStream=null,micSrc=null,devices=[];
-const meta={station:'CCAST',now:''};try{Object.assign(meta,JSON.parse(localStorage.cc_meta||'{}'));}catch(e){}
+const meta={station:'CCAST',now:'',latency:'fast',tls:false};try{Object.assign(meta,JSON.parse(localStorage.cc_meta||'{}'));}catch(e){}if(!['smooth','fast','ultra'].includes(meta.latency))meta.latency='fast';
 if(/classcast radio/i.test(meta.station))meta.station='CCAST';
 // ---------- the desk: one Web Audio graph.
 //   channel i:  device -> g_i (duck / mute) -> dest_i  => its own Opus track
@@ -529,7 +540,11 @@ $('#quit').onclick=async()=>{if(!confirm('Quit CCAST? Students will be disconnec
   document.body.innerHTML='<div class=wrap style="text-align:center;padding-top:20vh"><div class=station style="justify-content:center;margin-bottom:18px"><span class=logo>'+ICON_WAVE+'</span><span class=stname>CCAST</span></div><p style="color:var(--ink2)">CCAST has quit. You can close this tab.</p></div>';};
 function saveMeta(){try{localStorage.cc_meta=JSON.stringify(meta);}catch(e){}}
 function renderMeta(){$('#stname').textContent=meta.station;$('#now').value=meta.now;document.title=meta.station+' · Studio';}
-function broadcastMeta(to){sig.send(to||'*',{type:'meta',station:meta.station,now:meta.now,live,muted,talking});}
+function broadcastMeta(to){sig.send(to||'*',{type:'meta',station:meta.station,now:meta.now,latency:meta.latency,tls:!!meta.tls,live,muted,talking});}
+const LATHINT={smooth:'WebRTC · steady 150 ms jitter buffer. Never warbles — for listening to music. ≈ 180 ms.',fast:'WebRTC at its floor · 10 ms frames, jitter target 0, direct playout. ≈ 55–70 ms.',ultra:'Raw PCM over a data channel · our own ~10 ms buffer, no codec, no NetEq. ≈ 40–50 ms over http, ≈ 35–45 via the https link. 1.5 Mb/s per receiver.'};
+function renderLat(){document.querySelectorAll('#latsel button').forEach(b=>b.classList.toggle('on',b.dataset.m===meta.latency));$('#lathint').textContent=LATHINT[meta.latency];$('#tls').checked=!!meta.tls;$('#tlsrow').style.opacity=meta.latency==='ultra'?1:.45;}
+document.querAll=null;document.querySelectorAll('#latsel button').forEach(b=>b.onclick=()=>{meta.latency=b.dataset.m;saveMeta();renderLat();broadcastMeta();});
+$('#tls').onchange=()=>{meta.tls=$('#tls').checked;saveMeta();renderLat();broadcastMeta();};renderLat();
 $('#stname').onclick=()=>{const v=prompt('Name',meta.station);if(v&&v.trim()){meta.station=v.trim().slice(0,40);saveMeta();renderMeta();broadcastMeta();}};
 $('#sendnow').onclick=()=>{meta.now=$('#now').value.trim();saveMeta();broadcastMeta();toast(meta.now?'Receivers updated':'Cleared');};
 $('#now').onkeydown=e=>{if(e.key==='Enter')$('#sendnow').click();};$('#clearnow').onclick=()=>{$('#now').value='';$('#sendnow').click();};
@@ -773,7 +788,7 @@ svg.bg{position:fixed;inset:0;width:100%;height:100%;z-index:0;pointer-events:no
 .sw::before{content:'';position:absolute;top:2px;bottom:2px;width:calc(50% - 3px);left:2px;border-radius:11px;background:var(--ink);transition:left .15s}
 .sw.fast::before{left:calc(50% + 1px)}.sw span{position:relative;z-index:1}.sw:not(.fast) span:first-child,.sw.fast span:last-child{color:#fff}
 .sw.tri{width:168px;grid-template-columns:1fr 1fr 1fr}.sw.tri::before{width:calc(33.33% - 3px)}.sw.tri.p1::before{left:calc(33.33% + 1px)}.sw.tri.p2::before{left:calc(66.66% + 1px)}
-.sw.tri span{color:var(--ink2)}.sw.tri.p0 span:nth-child(1),.sw.tri.p1 span:nth-child(2),.sw.tri.p2 span:nth-child(3){color:#fff}
+.sw.tri span{color:var(--ink2)}.sw.ro{cursor:default;opacity:.85}.sw.tri.p0 span:nth-child(1),.sw.tri.p1 span:nth-child(2),.sw.tri.p2 span:nth-child(3){color:#fff}
 .unmute{position:fixed;inset:0;background:rgba(247,246,242,.9);display:none;place-items:center;z-index:9}.unmute.show{display:grid}
 .unmute button{font:inherit;font-weight:800;letter-spacing:.1em;text-transform:uppercase;border:1.5px solid var(--ink);background:var(--ink);color:#fff;border-radius:14px;padding:20px 40px;cursor:pointer}
 .toast{position:fixed;left:50%;bottom:20px;transform:translateX(-50%) translateY(20px);opacity:0;background:var(--ink);color:#fff;padding:10px 16px;border-radius:12px;transition:.25s;pointer-events:none;font-weight:600;z-index:9}.toast.show{opacity:1;transform:translateX(-50%)}
@@ -850,7 +865,7 @@ LISTEN_HTML = r"""<!doctype html><html><head><meta charset=utf-8><title>CCAST</t
     <div class=btnlbl><button class="round mute" id=vis title="Visual metronome — fullscreen"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="14" rx="2"/><circle cx="12" cy="11" r="3.2" fill="currentColor" stroke="none"/></svg></button><span class=lbl>visual</span></div>
    </div>
    <div class=btnlbl><div class=sw id=snd title="Click sound"><span>stick</span><span>shaker</span></div><span class=lbl>sound</span></div>
-   <div class=btnlbl><div class="sw tri" id=seg title="Smooth: steady 150 ms · Min: WebRTC at its minimum · Ultra: raw PCM over a data channel, ~10 ms buffer"><span>smooth</span><span>min</span><span>ultra</span></div><span class=lbl>buffer</span></div>
+   <div class=btnlbl><div class="sw tri ro" id=seg title="Set by the studio"><span>smooth</span><span>min</span><span>ultra</span></div><span class=lbl>buffer · studio</span></div>
   </div>
  </section>
 </main>
@@ -878,7 +893,7 @@ LISTEN_HTML = r"""<!doctype html><html><head><meta charset=utf-8><title>CCAST</t
 <script>%JS%
 const me='s-'+rnd();const sig=new Signal(me);
 let pc=null,listening=false,timer=null,pending=[],attempt=0,lmuted=false;
-const meta={station:'CCAST',now:'',live:false,muted:false,talking:false};
+const meta={station:'CCAST',now:'',live:false,muted:false,talking:false,latency:'fast',tls:false};
 // ---------- playback bus (Web Audio): every received channel -> its fader -> master -> speakers
 const AC=window.AudioContext||window.webkitAudioContext;const rac=new AC({latencyHint:'interactive'});
 const master=rac.createGain();master.connect(rac.destination);const bus=rac.createGain();bus.connect(master);   // mixing path (only used with 2+ channels)
@@ -896,10 +911,10 @@ function ramp(g,v,ms){const t=rac.currentTime;g.gain.cancelScheduledValues(t);g.
 let mode='smooth';try{mode=localStorage.cc_mode||'smooth';}catch(e){}
 // Chrome's jitter buffer is tuned for speech and time-stretches to chase latency, which warbles on music.
 // Smooth: a fixed 150 ms. Min: target 0 — NetEq then holds only what the measured network jitter needs. Ultra: our own PCM path (see below).
-const MODES=['smooth','fast','ultra'];try{const q=new URLSearchParams(location.search).get('mode');if(q&&MODES.includes(q)){mode=q;localStorage.cc_mode=q;history.replaceState(null,'',location.pathname);}}catch(e){}if(!MODES.includes(mode))mode='smooth';
+const MODES=['smooth','fast','ultra'];mode='fast';try{history.replaceState(null,'',location.pathname);}catch(e){}   // the studio decides; arrives with the first meta message
 function applyMode(){const ms=mode==='smooth'?150:0;for(const r of receivers){try{r.jitterBufferTarget=ms;}catch(e){}try{if('playoutDelayHint' in r)r.playoutDelayHint=ms/1000;}catch(e){}}
   $('#seg').className='sw tri p'+MODES.indexOf(mode);if(typeof ultraApply==='function')ultraApply();}
-$('#seg').onclick=()=>{mode=MODES[(MODES.indexOf(mode)+1)%3];try{localStorage.cc_mode=mode;}catch(e){}applyMode();};
+
 // ---------- knobs (0..1, perceptual: gain = v^2) — drag vertically or scroll, double-click resets
 function makeKnob(el,v,onchange,size){el.innerHTML=`<svg viewBox="0 0 100 100" fill="none" stroke="#3b2d6e" stroke-width="1.5"><g class=ticks></g><circle cx="50" cy="50" r="30" fill="#fbfaf8"/><circle cx="50" cy="50" r="24" stroke-dasharray="1.5 3.2" opacity=".6"/><g class=ind><line x1="50" y1="50" x2="50" y2="24" stroke-width="2.5" stroke-linecap="round"/></g></svg><div class="val mono"></div>`;
   const ticks=el.querySelector('.ticks'),ind=el.querySelector('.ind'),val=el.querySelector('.val');
@@ -981,8 +996,8 @@ draw();
     ultra.node.connect(ultra.gain);ultra.node.connect(abus);ultra.ready=true;}catch(e){console.warn('ultra unavailable',e);}})();
 fetch('/api/info').then(r=>r.json()).then(i=>{httpsLink=i.https||null;ultraApply();}).catch(()=>{});
 function ultraApply(){const want=mode==='ultra'&&ultra.avail&&ultra.ready&&connected();
-  if(mode==='ultra'&&httpsLink&&location.protocol==='http:'&&!window.__tlsHop){window.__tlsHop=true;toast('Switching to the ultra link…');   // the audio-thread path needs https: go there, keep the setting
-    setTimeout(()=>{location.href=httpsLink.replace(/\/$/,'')+'/?mode=ultra';},600);return;}const on=want&&ultra.dc&&ultra.dc.readyState==='open';
+  if(mode==='ultra'&&meta.tls&&httpsLink&&location.protocol==='http:'&&!window.__tlsHop){window.__tlsHop=true;toast('Switching to the ultra link…');   // teacher opted for the audio-thread path: needs https
+    setTimeout(()=>{location.href=httpsLink.replace(/\/$/,'')+'/';},600);return;}const on=want&&ultra.dc&&ultra.dc.readyState==='open';
   if(on!==ultra.on){ultra.on=on;if(dc&&dc.readyState==='open')try{dc.send(JSON.stringify({type:'pcm',on}));}catch(e){}if(on&&ultra.reset)ultra.reset();}
   const prog=[...chans.values()].filter(c=>c.kind!=='tb');const vm=lmuted?0:vol*vol;
   if(ultra.gain)ramp(ultra.gain,on?vm*duck()*(prog[0]?chanGain(prog[0]):1):0,30);
@@ -1068,7 +1083,7 @@ function vmDots(el,bpb,active,size){if(el.children.length!==bpb){el.innerHTML=''
 // ---------- signalling
 let stemInfo=[];
 sig.onmsg=async(from,d)=>{if(from!=='host')return;
-  if(d.type==='meta'){Object.assign(meta,d);renderMeta();applyMix();return;}
+  if(d.type==='meta'){Object.assign(meta,d);if(MODES.includes(meta.latency)&&meta.latency!==mode){mode=meta.latency;applyMode();}renderMeta();applyMix();return;}
   if(!listening)return;
   if(d.type==='wait'){setState('wait','Studio is off air','You’ll be connected automatically when it goes live');schedule(6000);}
   else if(d.type==='host-ready'){if(!(connected()&&pc.hid===d.hid))hello();}
@@ -1231,7 +1246,10 @@ def shutdown():
     os._exit(0)
 
 
-CERT = os.path.join(HERE, ".classcast-cert.pem"); KEY = os.path.join(HERE, ".classcast-key.pem")
+CERT = os.path.join(HERE, ".classcast-cert-v2.pem"); KEY = os.path.join(HERE, ".classcast-key-v2.pem")
+for _old in (".classcast-cert.pem", ".classcast-key.pem"):
+    try: os.remove(os.path.join(HERE, _old))
+    except OSError: pass
 
 
 def ensure_cert(ip):
@@ -1239,7 +1257,7 @@ def ensure_cert(ip):
     if os.path.exists(CERT) and os.path.exists(KEY):
         return True
     try:
-        subprocess.run(["openssl", "req", "-x509", "-newkey", "rsa:2048", "-nodes", "-keyout", KEY, "-out", CERT, "-days", "3650",
+        subprocess.run(["openssl", "req", "-x509", "-newkey", "rsa:2048", "-nodes", "-keyout", KEY, "-out", CERT, "-days", "397",
                         "-subj", "/CN=CCAST", "-addext", f"subjectAltName=IP:{ip},DNS:localhost"], check=True, capture_output=True)
         return True
     except Exception as e:

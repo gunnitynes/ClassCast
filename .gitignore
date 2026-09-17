@@ -5,3 +5,5 @@ classcast.log
 .DS_Store
 .classcast-cert.pem
 .classcast-key.pem
+.classcast-cert-v2.pem
+.classcast-key-v2.pem
