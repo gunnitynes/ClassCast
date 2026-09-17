@@ -886,6 +886,7 @@ const abus=rac.createGain();                                                    
 const split=rac.createChannelSplitter(2);abus.connect(split);const N=2048,bufL=new Float32Array(N),bufR=new Float32Array(N);
 const IOS=/iP(hone|ad|od)/.test(navigator.userAgent);let directMode=false;
 const ultra={avail:false,dc:null,node:null,gain:null,ready:false,fill:0,T:512,under:0,on:false};   // the PCM path (set up below)
+let httpsLink=null;   // the https 'ultra link', from /api/info
 const clickGain=rac.createGain();clickGain.gain.value=0;const clickMaster=rac.createGain();clickGain.connect(clickMaster);clickMaster.connect(rac.destination);clickGain.connect(abus);   // click: own path to the speakers
 const an=rac.createAnalyser(),anR=rac.createAnalyser();an.fftSize=anR.fftSize=N;an.smoothingTimeConstant=anR.smoothingTimeConstant=0;split.connect(an,0);split.connect(anR,1);
 const chans=new Map();   // stemId -> {id,name,kind,gain,src,el,level,muted,solo}
@@ -895,7 +896,7 @@ function ramp(g,v,ms){const t=rac.currentTime;g.gain.cancelScheduledValues(t);g.
 let mode='smooth';try{mode=localStorage.cc_mode||'smooth';}catch(e){}
 // Chrome's jitter buffer is tuned for speech and time-stretches to chase latency, which warbles on music.
 // Smooth: a fixed 150 ms. Min: target 0 — NetEq then holds only what the measured network jitter needs. Ultra: our own PCM path (see below).
-const MODES=['smooth','fast','ultra'];if(!MODES.includes(mode))mode='smooth';
+const MODES=['smooth','fast','ultra'];try{const q=new URLSearchParams(location.search).get('mode');if(q&&MODES.includes(q)){mode=q;localStorage.cc_mode=q;history.replaceState(null,'',location.pathname);}}catch(e){}if(!MODES.includes(mode))mode='smooth';
 function applyMode(){const ms=mode==='smooth'?150:0;for(const r of receivers){try{r.jitterBufferTarget=ms;}catch(e){}try{if('playoutDelayHint' in r)r.playoutDelayHint=ms/1000;}catch(e){}}
   $('#seg').className='sw tri p'+MODES.indexOf(mode);if(typeof ultraApply==='function')ultraApply();}
 $('#seg').onclick=()=>{mode=MODES[(MODES.indexOf(mode)+1)%3];try{localStorage.cc_mode=mode;}catch(e){}applyMode();};
@@ -978,9 +979,10 @@ draw();
     else{const ring=new PcmRing(rac.sampleRate,onrep);const sp=rac.createScriptProcessor(256,0,2);      // plain-http pages have no AudioWorklet: main-thread fallback, 256-frame blocks
       sp.onaudioprocess=e=>ring.render(e.outputBuffer.getChannelData(0),e.outputBuffer.getChannelData(1));ultra.node=sp;ultra.feed=b=>ring.push(b);ultra.reset=()=>ring.cmd({cmd:'reset'});ultra.path='main';}
     ultra.node.connect(ultra.gain);ultra.node.connect(abus);ultra.ready=true;}catch(e){console.warn('ultra unavailable',e);}})();
-let httpsLink=null;fetch('/api/info').then(r=>r.json()).then(i=>{httpsLink=i.https||null;}).catch(()=>{});
+fetch('/api/info').then(r=>r.json()).then(i=>{httpsLink=i.https||null;ultraApply();}).catch(()=>{});
 function ultraApply(){const want=mode==='ultra'&&ultra.avail&&ultra.ready&&connected();
-  if(mode==='ultra'&&ultra.path==='main'&&httpsLink&&location.protocol==='http:'&&!window.__tlsHint){window.__tlsHint=true;toast('Even lower: open '+httpsLink+' (accept the certificate once)');}const on=want&&ultra.dc&&ultra.dc.readyState==='open';
+  if(mode==='ultra'&&httpsLink&&location.protocol==='http:'&&!window.__tlsHop){window.__tlsHop=true;toast('Switching to the ultra link…');   // the audio-thread path needs https: go there, keep the setting
+    setTimeout(()=>{location.href=httpsLink.replace(/\/$/,'')+'/?mode=ultra';},600);return;}const on=want&&ultra.dc&&ultra.dc.readyState==='open';
   if(on!==ultra.on){ultra.on=on;if(dc&&dc.readyState==='open')try{dc.send(JSON.stringify({type:'pcm',on}));}catch(e){}if(on&&ultra.reset)ultra.reset();}
   const prog=[...chans.values()].filter(c=>c.kind!=='tb');const vm=lmuted?0:vol*vol;
   if(ultra.gain)ramp(ultra.gain,on?vm*duck()*(prog[0]?chanGain(prog[0]):1):0,30);

@@ -95,8 +95,10 @@ Three receiver settings (the **buffer** switch):
 **The https "ultra link"** (shown on the studio next to the normal address, also as a
 small QR, e.g. `https://192.168.2.103:8443`): browsers only allow the audio-thread
 worklet on secure pages, so over plain http Ultra falls back to a main-thread path
-(~10 ms slower, marked "(http)" in the readout). The link uses CCAST's own
-certificate — students click **Advanced → Proceed** once per device.
+(~10 ms slower, marked "(http)" in the readout). Choosing **Ultra** on the normal page
+takes the student there automatically; the link uses CCAST's own certificate, so
+Chrome shows a warning once per device — **Advanced → Proceed** — and the receiver
+opens already set to Ultra.
 
 The header estimate (`≈ 40 ms end-to-end · ultra pcm`) is built from Chrome's own
 measured numbers plus our buffer fill. The stream volume knob does not touch the
