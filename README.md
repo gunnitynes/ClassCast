@@ -86,16 +86,16 @@ The studio's **Latency · for every receiver** selector applies to all students 
 - **Smooth** — WebRTC/Opus, steady 150 ms jitter buffer. Music never warbles. ≈ 180 ms.
 - **Min** — WebRTC/Opus at its floor: 10 ms frames, jitter target 0, raw device tracks,
   direct media-element playout. ≈ 55–70 ms.
-- **Ultra** — raw 16‑bit PCM in 5.3 ms blocks over a WebRTC data channel, played from
-  our own ~10 ms adaptive jitter buffer with a drift-correcting resampler. No codec, no
-  NetEq, no browser audio-output stage. ≈ 40–50 ms over the normal http address.
+- **Ultra** — raw 16‑bit PCM in 5.3 ms blocks over a WebRTC data channel, played on the
+  audio thread from our own ~10 ms adaptive jitter buffer with a drift-correcting
+  resampler. No codec, no NetEq, no browser audio-output stage. ≈ 35–45 ms.
   1.5 Mb/s per student. Talkback and the multi-channel cue mixer stay on Opus.
-
-Optional, off by default: **send Ultra receivers to the https link**. Browsers only allow
-the audio-thread worklet on secure pages, which saves another ≈10 ms — but the link
-uses CCAST's own certificate (valid 397 days, regenerated automatically), so each device
-sees a "connection is not private" warning once: *Advanced → Proceed*. Leave it off for
-a warning-free classroom; turn it on when squeezing the last milliseconds.
+  **Needs the https link**: browsers only run audio-thread code on secure pages, and a
+  main-thread player is neither faster nor glitch-free, so receivers on the normal http
+  address automatically run Min instead (the studio shows "n on http → Min").
+  Tick **send Ultra receivers to the https link** and they are taken there by
+  themselves; each device accepts CCAST's own certificate once (*Advanced → Proceed*;
+  valid 397 days, regenerated automatically).
 
 The receiver header shows an honest estimate (`≈ 45 ms end-to-end · ultra pcm`) built from
 Chrome's own measured numbers. The stream volume knob does not touch the click level.

@@ -459,7 +459,7 @@ HOST_HTML = r"""<!doctype html><html><head><meta charset=utf-8><title>CCAST · S
  <div class=latrow>
   <div><label>Latency · for every receiver</label><div class="sw3" id=latsel><button data-m=smooth>Smooth</button><button data-m=fast>Min</button><button data-m=ultra>Ultra</button></div></div>
   <div class=lathint id=lathint></div>
-  <label class=chk id=tlsrow><input type=checkbox id=tls> send Ultra receivers to the https link (audio-thread path, ≈10 ms lower; browsers show a certificate warning once per device)</label>
+  <label class=chk id=tlsrow><input type=checkbox id=tls> send Ultra receivers to the https link automatically (required for Ultra; each device accepts the certificate once: Advanced → Proceed)</label>
  </div>
  <div class=hint id=chhint>One channel = the normal stream. Add more and every student gets their own cue mix: knobs, mute and solo per channel. Six virtual stereo devices come with this Mac (Pro Tools Audio Bridge 2‑A, 2‑B, 6, 16, 32, 64) — combine them with your interface in an Aggregate Device and route DAW sends to them.</div>
 
@@ -494,6 +494,7 @@ HOST_HTML = r"""<!doctype html><html><head><meta charset=utf-8><title>CCAST · S
 <script src="/qrcode.min.js"></script>
 <script>%JS%
 const peers=new Map();           // id -> {pc,cid,pending:[],senders:{stemId:RTCRtpSender}}
+const pcmPeers=new Set();        // peers currently fed by the PCM (ultra) path
 const HID=rnd();                 // this host page instance; students ignore host-ready from a host they're already connected to
 const sig=new Signal('host','&hid='+HID);
 let live=false,muted=false,talking=false,hasSignal=false,t0=0,micStream=null,micSrc=null,devices=[];
@@ -541,8 +542,9 @@ $('#quit').onclick=async()=>{if(!confirm('Quit CCAST? Students will be disconnec
 function saveMeta(){try{localStorage.cc_meta=JSON.stringify(meta);}catch(e){}}
 function renderMeta(){$('#stname').textContent=meta.station;$('#now').value=meta.now;document.title=meta.station+' · Studio';}
 function broadcastMeta(to){sig.send(to||'*',{type:'meta',station:meta.station,now:meta.now,latency:meta.latency,tls:!!meta.tls,live,muted,talking});}
-const LATHINT={smooth:'WebRTC · steady 150 ms jitter buffer. Never warbles — for listening to music. ≈ 180 ms.',fast:'WebRTC at its floor · 10 ms frames, jitter target 0, direct playout. ≈ 55–70 ms.',ultra:'Raw PCM over a data channel · our own ~10 ms buffer, no codec, no NetEq. ≈ 40–50 ms over http, ≈ 35–45 via the https link. 1.5 Mb/s per receiver.'};
-function renderLat(){document.querySelectorAll('#latsel button').forEach(b=>b.classList.toggle('on',b.dataset.m===meta.latency));$('#lathint').textContent=LATHINT[meta.latency];$('#tls').checked=!!meta.tls;$('#tlsrow').style.opacity=meta.latency==='ultra'?1:.45;}
+const LATHINT={smooth:'WebRTC · steady 150 ms jitter buffer. Never warbles — for listening to music. ≈ 180 ms.',fast:'WebRTC at its floor · 10 ms frames, jitter target 0, direct playout. ≈ 55–70 ms.',ultra:'Raw PCM over a data channel on the audio thread · our own ~10 ms buffer, no codec, no NetEq. ≈ 35–45 ms. Needs the https link (browsers only run audio-thread code on secure pages); receivers on the http address run Min instead. 1.5 Mb/s per receiver.'};
+function renderLat(){document.querySelectorAll('#latsel button').forEach(b=>b.classList.toggle('on',b.dataset.m===meta.latency));$('#lathint').textContent=LATHINT[meta.latency];$('#tls').checked=!!meta.tls;$('#tlsrow').style.opacity=meta.latency==='ultra'?1:.45;
+  $('#tlsrow').style.color=(meta.latency==='ultra'&&!meta.tls)?'var(--warn)':'';if(typeof ultraLine==='function')ultraLine();}
 document.querAll=null;document.querySelectorAll('#latsel button').forEach(b=>b.onclick=()=>{meta.latency=b.dataset.m;saveMeta();renderLat();broadcastMeta();});
 $('#tls').onchange=()=>{meta.tls=$('#tls').checked;saveMeta();renderLat();broadcastMeta();};renderLat();
 $('#stname').onclick=()=>{const v=prompt('Name',meta.station);if(v&&v.trim()){meta.station=v.trim().slice(0,40);saveMeta();renderMeta();broadcastMeta();}};
@@ -628,16 +630,18 @@ setInterval(()=>{if(!live)return;const s=Math.floor((Date.now()-t0)/1000);$('#st
 })();
 $('#clip').onclick=()=>$('#clip').classList.remove('on');
 // ---------- ultra path: capture worklet on channel 1, fanned out to students who asked for it
-let capNode=null,capSrcStem=null;const pcmPeers=new Set();
+let capNode=null,capSrcStem=null;
 async function ensureCapture(){const s0=stems.find(x=>x.stream);if(!s0)return;if(capNode&&capSrcStem===s0)return;
   if(!capNode){await ac.audioWorklet.addModule(workletURL(CAP_WORKLET));capNode=new AudioWorkletNode(ac,'cap',{numberOfInputs:1,numberOfOutputs:1,outputChannelCount:[1]});
     const sink=ac.createGain();sink.gain.value=0;capNode.connect(sink).connect(ac.destination);   // keep the graph pulling
     capNode.port.onmessage=e=>{if(!live||!pcmPeers.size)return;for(const p of pcmPeers){const d=p.pcm;if(d&&d.readyState==='open'&&d.bufferedAmount<65536){try{d.send(e.data);}catch(err){}}}};}
   if(capSrcStem&&capSrcStem.src)try{capSrcStem.src.disconnect(capNode);}catch(e){}
   capSrcStem=s0;if(s0.src)s0.src.connect(capNode);}
-function setPcm(p,on){if(on){pcmPeers.add(p);ensureCapture();}else pcmPeers.delete(p);
+function setPcm(p,on,info){p.path=info;if(on){pcmPeers.add(p);ensureCapture();}else pcmPeers.delete(p);
   const s0=stems.find(x=>x.stream);const sn=s0&&p.senders[s0.id];if(sn){try{const prm=sn.getParameters();if(prm.encodings&&prm.encodings.length){prm.encodings[0].active=!on;sn.setParameters(prm).catch(()=>{});}}catch(e){}}   // no double bandwidth
-  $('#ultra').textContent=pcmPeers.size?pcmPeers.size+' on ultra':'';}
+  ultraLine();}
+function ultraLine(){const all=[...peers.values()];const n=all.length,u=pcmPeers.size,http=all.filter(x=>x.path&&x.path.secure===false).length;
+  $('#ultra').textContent=meta.latency!=='ultra'||!n?'':(u+' / '+n+' on ultra'+(http?' · '+http+' on http → Min':''));}
 // ---------- clock: MIDI Clock in (Web MIDI), fitted to a tempo/phase line, sent to students over data channels
 const clock={running:false,bpm:0,bpb:4,ticks:0,line:null,seq:0,lastTick:0};let midi=null;const tickT=[];
 try{clock.bpb=parseInt(localStorage.cc_bpb)||4;}catch(e){}$('#bpb').value=clock.bpb;
@@ -669,7 +673,7 @@ async function midiSetup(){if(!navigator.requestMIDIAccess){$('#midiin').innerHT
 midiSetup();
 // ---------- peers: one track per channel + talkback, all in one connection
 function render(){$('#n').textContent=[...peers.values()].filter(p=>p.pc.connectionState==='connected').length;}
-function dropPeer(id){const p=peers.get(id);if(p){pcmPeers.delete(p);p.pc.close();peers.delete(id);render();$('#ultra').textContent=pcmPeers.size?pcmPeers.size+' on ultra':'';}}
+function dropPeer(id){const p=peers.get(id);if(p){pcmPeers.delete(p);p.pc.close();peers.delete(id);render();ultraLine();}}
 function tuneSender(sn,kbps){try{const prm=sn.getParameters();prm.encodings=prm.encodings&&prm.encodings.length?prm.encodings:[{}];prm.encodings[0].maxBitrate=kbps*1000;prm.encodings[0].priority='high';prm.encodings[0].networkPriority='high';sn.setParameters(prm).catch(()=>{});}catch(e){}}
 const sendTrack=s=>s.stream.getAudioTracks()[0];              // the raw device track: no mixer in the path
 const tbSendTrack=()=>micStream?micStream.getAudioTracks()[0]:tbTrack;
@@ -682,7 +686,7 @@ function makePeer(id){const old=peers.get(id);if(old){pcmPeers.delete(old);old.p
   // data channel: clock timeline + clock-offset pings (unordered, no retransmits: newest wins)
   const dc=pc.createDataChannel('clock',{ordered:false,maxRetransmits:0});p.dc=dc;
   dc.onopen=()=>{try{dc.send(clockMsg());}catch(e){}};
-  dc.onmessage=e=>{try{const m=JSON.parse(e.data);if(m.type==='ping')dc.send(JSON.stringify({type:'pong',t1:m.t1,t2:performance.now()}));else if(m.type==='clock?')dc.send(clockMsg());else if(m.type==='pcm')setPcm(p,!!m.on);}catch(err){}};
+  dc.onmessage=e=>{try{const m=JSON.parse(e.data);if(m.type==='ping')dc.send(JSON.stringify({type:'pong',t1:m.t1,t2:performance.now()}));else if(m.type==='clock?')dc.send(clockMsg());else if(m.type==='pcm')setPcm(p,!!m.on,m);}catch(err){}};
   const pcm=pc.createDataChannel('pcm',{ordered:false,maxRetransmits:0});p.pcm=pcm;pcm.binaryType='arraybuffer';
   pc.onicecandidate=e=>{if(e.candidate)sig.send(id,{type:'ice',cid:p.cid,c:e.candidate});};
   pc.onconnectionstatechange=()=>{render();const s=pc.connectionState;
@@ -865,7 +869,6 @@ LISTEN_HTML = r"""<!doctype html><html><head><meta charset=utf-8><title>CCAST</t
     <div class=btnlbl><button class="round mute" id=vis title="Visual metronome — fullscreen"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="14" rx="2"/><circle cx="12" cy="11" r="3.2" fill="currentColor" stroke="none"/></svg></button><span class=lbl>visual</span></div>
    </div>
    <div class=btnlbl><div class=sw id=snd title="Click sound"><span>stick</span><span>shaker</span></div><span class=lbl>sound</span></div>
-   <div class=btnlbl><div class="sw tri ro" id=seg title="Set by the studio"><span>smooth</span><span>min</span><span>ultra</span></div><span class=lbl>buffer · studio</span></div>
   </div>
  </section>
 </main>
@@ -913,7 +916,7 @@ let mode='smooth';try{mode=localStorage.cc_mode||'smooth';}catch(e){}
 // Smooth: a fixed 150 ms. Min: target 0 — NetEq then holds only what the measured network jitter needs. Ultra: our own PCM path (see below).
 const MODES=['smooth','fast','ultra'];mode='fast';try{history.replaceState(null,'',location.pathname);}catch(e){}   // the studio decides; arrives with the first meta message
 function applyMode(){const ms=mode==='smooth'?150:0;for(const r of receivers){try{r.jitterBufferTarget=ms;}catch(e){}try{if('playoutDelayHint' in r)r.playoutDelayHint=ms/1000;}catch(e){}}
-  $('#seg').className='sw tri p'+MODES.indexOf(mode);if(typeof ultraApply==='function')ultraApply();}
+  if(typeof ultraApply==='function')ultraApply();}
 
 // ---------- knobs (0..1, perceptual: gain = v^2) — drag vertically or scroll, double-click resets
 function makeKnob(el,v,onchange,size){el.innerHTML=`<svg viewBox="0 0 100 100" fill="none" stroke="#3b2d6e" stroke-width="1.5"><g class=ticks></g><circle cx="50" cy="50" r="30" fill="#fbfaf8"/><circle cx="50" cy="50" r="24" stroke-dasharray="1.5 3.2" opacity=".6"/><g class=ind><line x1="50" y1="50" x2="50" y2="24" stroke-width="2.5" stroke-linecap="round"/></g></svg><div class="val mono"></div>`;
@@ -977,14 +980,14 @@ function draw(){
     const db=20*Math.log10(Math.sqrt(s/N)+1e-9);const pct=Math.max(0,Math.min(100,(db+60)/60*100));peak[i]=Math.max(pct,peak[i]-0.6);
     bars[i].querySelector('i').style.width=pct+'%';bars[i].querySelector('b').style.left=peak[i]+'%';});}
   if(W&&H){bx.globalCompositeOperation='destination-out';bx.fillStyle='rgba(0,0,0,.28)';bx.fillRect(0,0,W,H);bx.globalCompositeOperation='source-over';   // phosphor persistence
-    const t=(performance.now()-t0)/1000;bx.shadowColor='rgba(59,45,110,.55)';bx.shadowBlur=6*D;bx.lineJoin='round';
+    const t=(performance.now()-t0)/1000;bx.lineJoin='round';   // no blur filter: it cost several ms per frame on the main thread
     if(connected()&&scopeMode!=='off'&&!lmuted){let start=0;for(let k=1;k<N/3;k++){if(bufL[k-1]<0&&bufL[k]>=0){start=k;break;}}
       const span=1200,amp=H*0.42;const trace=(b,c,w)=>{bx.strokeStyle=c;bx.lineWidth=w*D;bx.beginPath();for(let k=0;k<span;k++){const x=W*k/span,y=H/2-b[start+k]*amp;k?bx.lineTo(x,y):bx.moveTo(x,y);}bx.stroke();};
-      trace(bufR,'rgba(142,127,196,.85)',1.2);trace(bufL,'#3b2d6e',1.7);}
+      trace(bufR,'rgba(142,127,196,.85)',1.2);trace(bufL,'rgba(59,45,110,.25)',4);trace(bufL,'#3b2d6e',1.6);}   // soft glow = one wide translucent stroke
     else if(scopeMode==='wait'){const x=((t*0.4)%1)*W;bx.fillStyle='#3b2d6e';bx.beginPath();bx.arc(x,H/2,3*D,0,7);bx.fill();}
     else{bx.strokeStyle='#8e7fc4';bx.lineWidth=1.3*D;bx.beginPath();for(let k=0;k<160;k++){const x=W*k/159,y=H/2+(Math.sin(k*1.7+t*3)*0.35+Math.sin(k*0.31-t)*0.25)*D;k?bx.lineTo(x,y):bx.moveTo(x,y);}bx.stroke();}
-    bx.shadowBlur=0;}
-  requestAnimationFrame(draw);}
+    }
+  if(ultra.on){setTimeout(()=>requestAnimationFrame(draw),16);}else requestAnimationFrame(draw);}   // ~30 fps while the PCM path runs
 draw();
 // ---------- ultra path: PCM from the studio -> worklet jitter buffer -> speakers. Replaces the Opus programme when active.
 (async()=>{const onrep=d=>{if(d.fill!=null){ultra.fill=d.fill;ultra.T=d.T;ultra.under=d.under;}if(d.auto)ultra.T=d.auto;};
@@ -995,10 +998,11 @@ draw();
       sp.onaudioprocess=e=>ring.render(e.outputBuffer.getChannelData(0),e.outputBuffer.getChannelData(1));ultra.node=sp;ultra.feed=b=>ring.push(b);ultra.reset=()=>ring.cmd({cmd:'reset'});ultra.path='main';}
     ultra.node.connect(ultra.gain);ultra.node.connect(abus);ultra.ready=true;}catch(e){console.warn('ultra unavailable',e);}})();
 fetch('/api/info').then(r=>r.json()).then(i=>{httpsLink=i.https||null;ultraApply();}).catch(()=>{});
-function ultraApply(){const want=mode==='ultra'&&ultra.avail&&ultra.ready&&connected();
+function ultraApply(){const want=mode==='ultra'&&ultra.avail&&ultra.ready&&ultra.path==='worklet'&&connected();   // main-thread PCM is not better than Min: don't use it
   if(mode==='ultra'&&meta.tls&&httpsLink&&location.protocol==='http:'&&!window.__tlsHop){window.__tlsHop=true;toast('Switching to the ultra link…');   // teacher opted for the audio-thread path: needs https
     setTimeout(()=>{location.href=httpsLink.replace(/\/$/,'')+'/';},600);return;}const on=want&&ultra.dc&&ultra.dc.readyState==='open';
-  if(on!==ultra.on){ultra.on=on;if(dc&&dc.readyState==='open')try{dc.send(JSON.stringify({type:'pcm',on}));}catch(e){}if(on&&ultra.reset)ultra.reset();}
+  if(on!==ultra.on){ultra.on=on;if(dc&&dc.readyState==='open')try{dc.send(JSON.stringify({type:'pcm',on,path:ultra.path,secure:location.protocol==='https:'}));}catch(e){}if(on&&ultra.reset)ultra.reset();}
+  if(mode==='ultra'&&!want&&dc&&dc.readyState==='open'&&!window.__toldStudio){window.__toldStudio=true;try{dc.send(JSON.stringify({type:'pcm',on:false,path:ultra.path,secure:location.protocol==='https:'}));}catch(e){}}
   const prog=[...chans.values()].filter(c=>c.kind!=='tb');const vm=lmuted?0:vol*vol;
   if(ultra.gain)ramp(ultra.gain,on?vm*duck()*(prog[0]?chanGain(prog[0]):1):0,30);
   for(const c of prog){if(on){c.sink.muted=true;ramp(c.gain,0,20);}}          // Opus programme silenced while ultra carries it
@@ -1126,7 +1130,8 @@ setInterval(async()=>{if(!connected())return;try{const st=await pc.getStats();le
   if(ultra.on){const wa=(rac.outputLatency||0)+(rac.baseLatency||0);const blk=ultra.path==='main'?512/rac.sampleRate:0;est=Math.round((0.012+0.0053+0.003+(rtt||0)/2+ultra.fill/48000+blk+wa)*1000);}   // capture ≈12 · block 5.3 · hops ≈3 · net · our buffer · (main-thread blocks) · output
   if(rac.outputLatency>0.06&&!window.__btWarned){window.__btWarned=true;toast('Output latency '+Math.round(rac.outputLatency*1000)+' ms — Bluetooth headphones? Wired ones are ~100 ms faster');}if(est!=null){const e=est/1000;if(Math.abs(e-latSec)>0.015)latSec=e;else latSec=latSec*0.95+e*0.05;}   // click compensation: re-lock only on a real change, otherwise hold steady
   const buf=ultra.on?'buffer '+Math.round(ultra.fill/48)+' ms'+(ultra.under?' · '+ultra.under+' underruns':''):(jb!=null?'buffer '+Math.round(jb*1000)+' ms':'');
-  $('#lat').textContent=(est!=null?'≈ '+est+' ms end-to-end · ':'')+buf+(rtt!=null?' · net '+Math.round(rtt*1000)+' ms':'')+' · '+(ultra.on?'ultra pcm'+(ultra.path==='main'?' (http)':''):directMode?'direct':'mix')+(lost?' · lost '+lost:'');
+  const pathTxt=ultra.on?'ultra pcm':(mode==='ultra'?'min (ultra needs the https link)':directMode?'direct':'mix');
+  $('#lat').textContent=(est!=null?'≈ '+est+' ms end-to-end · ':'')+buf+(rtt!=null?' · net '+Math.round(rtt*1000)+' ms':'')+' · '+pathTxt+(lost?' · lost '+lost:'');
   $('#s1').textContent=codec+(n>1?' × '+(n-1)+'+tb':'')+(kbps?' · '+kbps+' kb/s':'');}catch(e){}},2000);
 applyMode();renderMeta();sig.run();
 </script></body></html>"""
