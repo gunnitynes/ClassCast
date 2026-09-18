@@ -346,15 +346,19 @@ select,input[type=text]{font:inherit;width:100%;padding:12px 14px;border-radius:
 select{background-image:linear-gradient(45deg,transparent 50%,var(--ink) 50%),linear-gradient(135deg,var(--ink) 50%,transparent 50%);background-position:calc(100% - 20px) 50%,calc(100% - 14px) 50%;background-size:6px 6px;background-repeat:no-repeat}
 .hint{color:var(--ink2);font-size:13px;margin-top:10px}.hint b{color:var(--ink)}
 /* address */
-.sharegrid{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:28px;align-items:center}.sharegrid>div:first-child{min-width:0}
-@media(max-width:760px){.sharegrid{grid-template-columns:1fr}}
-.url{font-size:48px;font-weight:800;letter-spacing:-.02em;line-height:1.1;white-space:nowrap;margin:4px 0 12px;color:var(--ink2)}.url b{color:var(--ink)}
-.alt{color:var(--ink2);font-size:13px}.alt code{color:var(--ink)}
-.qr{background:#fff;padding:12px;border-radius:14px;line-height:0;border:1.5px solid var(--ink);justify-self:end}
-.qr img,.qr canvas{display:block;width:230px;height:230px}
-.ultralink{display:flex;gap:16px;align-items:center;margin-top:14px;padding-top:12px;border-top:1.5px dashed var(--ink3)}
-.ultralink .mono{font-size:15px;font-weight:700;word-break:break-all}.qr2{background:#fff;padding:6px;border-radius:10px;border:1.5px solid var(--ink);line-height:0;flex:none}.qr2 img,.qr2 canvas{display:block;width:96px;height:96px}
-body.projector .ultralink{display:none}
+.links{display:grid;grid-template-columns:1fr;gap:18px}.links.two{grid-template-columns:1fr 1fr}
+@media(max-width:760px){.links.two{grid-template-columns:1fr}}
+.link{display:flex;flex-direction:column;align-items:center;gap:12px;padding:20px 18px 18px;border-radius:16px;border:1.5px solid var(--ink);background:var(--paper);min-width:0}
+.link.ultra{border-style:dashed;border-color:var(--live);background:linear-gradient(180deg,rgba(47,158,109,.06),transparent)}
+.linkhead{display:flex;flex-direction:column;align-items:center;gap:4px}
+.tag{font-size:12px;letter-spacing:.24em;text-transform:uppercase;font-weight:900;color:var(--ink);border:1.5px solid var(--ink);border-radius:8px;padding:5px 12px}
+.tag.green{color:var(--live);border-color:var(--live)}
+.tagsub{font-size:11px;letter-spacing:.12em;text-transform:uppercase;color:var(--ink2)}
+.url{width:100%;text-align:center;font-size:32px;font-weight:800;letter-spacing:-.02em;line-height:1.1;white-space:nowrap;color:var(--ink2)}.url b{color:var(--ink)}
+.link.ultra .url b{color:var(--live)}
+.alt{color:var(--ink2);font-size:12.5px;text-align:center}.alt code{color:var(--ink)}
+.qr{background:#fff;padding:12px;border-radius:14px;line-height:0;border:1.5px solid var(--ink)}.link.ultra .qr{border-color:var(--live)}
+.qr img,.qr canvas{display:block;width:220px;height:220px}
 /* channels */
 .chhead{display:flex;align-items:center;gap:10px;margin-bottom:8px}.chhead label{flex:1}
 .strip{display:grid;grid-template-columns:22px 150px minmax(0,1fr) 90px 40px;gap:10px;align-items:center;padding:6px 0;border-top:1.5px dashed var(--ink3)}
@@ -409,12 +413,12 @@ canvas#scope{display:block;width:100%;height:150px}
 .toast{position:fixed;left:50%;bottom:26px;transform:translateX(-50%) translateY(20px);opacity:0;background:var(--ink);color:#fff;padding:12px 18px;border-radius:12px;transition:.25s;pointer-events:none;font-weight:600;z-index:9}
 .toast.show{opacity:1;transform:translateX(-50%)}
 /* projector view: URL + QR only, huge */
-body.projector .card:not(.share),body.projector header .controls,body.projector .share .row,body.projector .share .hint{display:none}
-body.projector .wrap{max-width:none;padding:40px 5vw}body.projector .share{padding:48px}
-body.projector .sharegrid{grid-template-columns:1fr;gap:28px;text-align:center}
-body.projector .sharegrid>div:first-child{order:2}body.projector .qr{order:1;justify-self:center}
-body.projector .qr img,body.projector .qr canvas{width:min(48vh,560px);height:min(48vh,560px)}
-body.projector .url{margin:6px 0 10px}body.projector .alt{font-size:20px}body.projector .stname{font-size:28px}
+body.projector .card:not(.share),body.projector header .controls,body.projector .share button,body.projector .share>.hint{display:none}
+body.projector .wrap{max-width:none;padding:30px 4vw}body.projector .share{padding:36px}
+body.projector .links{gap:4vw}body.projector .link{padding:3vh 2vw}
+body.projector .links:not(.two) .qr img,body.projector .links:not(.two) .qr canvas{width:min(50vh,600px);height:min(50vh,600px)}
+body.projector .links.two .qr img,body.projector .links.two .qr canvas{width:min(44vh,36vw);height:min(44vh,36vw)}
+body.projector .tag{font-size:20px;padding:8px 20px}body.projector .tagsub{font-size:15px}body.projector .alt{font-size:18px}body.projector .stname{font-size:28px}
 """
 
 HOST_HTML = r"""<!doctype html><html><head><meta charset=utf-8><title>CCAST · Studio</title>
@@ -435,16 +439,23 @@ HOST_HTML = r"""<!doctype html><html><head><meta charset=utf-8><title>CCAST · S
 </header>
 
 <section class="card share">
- <div class=sharegrid>
-  <div>
+ <div class=links id=links>
+  <div class="link std">
+   <div class=linkhead><span class=tag>Standard</span><span class=tagsub>any browser · no warnings</span></div>
+   <div class=qr id=qr></div>
    <div class="url mono" id=url>…</div>
    <div class=alt id=alts></div>
-   <div class=ultralink id=ultralink hidden><div><span class=lbl>Ultra link · lowest latency</span><div class="mono" id=urltls></div><div class=hint style="margin-top:4px">https with our own certificate: students click <b>Advanced → Proceed</b> once. Unlocks the audio-thread PCM path.</div></div><div class=qr2 id=qr2></div></div>
-   <div class=row style="margin-top:16px"><button class=ghost id=copy>Copy link</button><button class=ghost id=copytls hidden>Copy ultra link</button></div>
-   <div class=hint>Same Wi-Fi as this Mac · any browser or phone · press <b>Listen</b> · leave the tab open while working.</div>
+   <button class=ghost id=copy>Copy link</button>
   </div>
-  <div class=qr id=qr></div>
+  <div class="link ultra" id=ultralink hidden>
+   <div class=linkhead><span class="tag green">Ultra</span><span class=tagsub>lowest latency · accept the certificate once</span></div>
+   <div class=qr id=qr2></div>
+   <div class="url mono" id=urltls>…</div>
+   <div class=alt>Chrome shows “not private” once per device → <b>Advanced → Proceed</b></div>
+   <button class=ghost id=copytls>Copy ultra link</button>
+  </div>
  </div>
+ <div class=hint style="text-align:center">Same Wi-Fi as this Mac · press <b>Listen</b> · leave the tab open while working.</div>
 </section>
 
 <section class=card id=studio>
@@ -522,18 +533,20 @@ function applyGains(){for(const s of stems){ramp(s.g,muted?0:(talking?0.25:1),60
 function engine(){if(ac.state!=='running')ac.resume().catch(()=>{});$('#acwarn').style.display=ac.state==='running'?'none':'';}
 ['pointerdown','keydown'].forEach(ev=>addEventListener(ev,engine,{capture:true}));ac.onstatechange=engine;
 // ---------- address / QR / station
-function fitUrl(){const el=$('#url');const chars=(el.textContent||'').length||24;el.style.fontSize='10px';const w=el.clientWidth||600;el.style.fontSize=Math.max(22,Math.min(150,w/(chars*0.61)))+'px';}
+function fitOne(el){const chars=(el.textContent||'').length||24;el.style.fontSize='10px';const w=el.clientWidth||600;el.style.fontSize=Math.max(18,Math.min(120,w/(chars*0.62)))+'px';}
+function fitUrl(){fitOne($('#url'));if(!$('#ultralink').hidden)fitOne($('#urltls'));}
 addEventListener('resize',fitUrl);
 fetch('/api/info').then(r=>r.json()).then(i=>{
   const u=new URL(i.url);$('#url').innerHTML=`<span style="color:var(--ink2)">http://</span><b>${u.hostname}</b><span style="color:var(--ink2)">:${u.port}</span>`;
   $('#url').dataset.url=i.url;fitUrl();
   if(window.QRCode)new QRCode($('#qr'),{text:i.url,width:480,height:480,correctLevel:QRCode.CorrectLevel.M});
   if(i.alts.length)$('#alts').innerHTML='Also: '+i.alts.map(a=>`<code>http://${a}:${i.port}</code>`).join(' · ');
-  if(i.https){$('#ultralink').hidden=false;$('#urltls').textContent=i.https;$('#copytls').hidden=false;$('#copytls').onclick=async()=>{try{await navigator.clipboard.writeText(i.https);toast('Ultra link copied');}catch(e){toast(i.https);}};
-    if(window.QRCode)new QRCode($('#qr2'),{text:i.https,width:200,height:200,correctLevel:QRCode.CorrectLevel.M});}
+  if(i.https){$('#ultralink').hidden=false;$('#links').classList.add('two');const u2=new URL(i.https);$('#urltls').innerHTML=`<span style="color:var(--ink2)">https://</span><b>${u2.hostname}</b><span style="color:var(--ink2)">:${u2.port}</span>`;
+    $('#copytls').onclick=async()=>{try{await navigator.clipboard.writeText(i.https);toast('Ultra link copied');}catch(e){toast(i.https);}};
+    if(window.QRCode)new QRCode($('#qr2'),{text:i.https,width:480,height:480,correctLevel:QRCode.CorrectLevel.M});}
   requestAnimationFrame(fitUrl);setTimeout(fitUrl,300);
 });
-if(window.ResizeObserver)new ResizeObserver(()=>fitUrl()).observe($('.sharegrid'));
+if(window.ResizeObserver)new ResizeObserver(()=>fitUrl()).observe($('#links'));
 $('#copy').onclick=async()=>{try{await navigator.clipboard.writeText($('#url').dataset.url);toast('Link copied');}catch(e){toast($('#url').dataset.url);}};
 $('#proj').onclick=()=>{document.body.classList.toggle('projector');setTimeout(fitUrl,30);};
 addEventListener('keydown',e=>{if(e.key==='Escape'){document.body.classList.remove('projector');setTimeout(fitUrl,30);}});
